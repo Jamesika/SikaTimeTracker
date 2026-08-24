@@ -82,8 +82,8 @@ if ($LASTEXITCODE -ne 0) {
 
 Get-ChildItem -LiteralPath $publishDirectory -Filter "*.pdb" -File | Remove-Item -Force
 $publishedFiles = @(Get-ChildItem -LiteralPath $publishDirectory -File)
-if ($publishedFiles.Count -ne 1 -or $publishedFiles[0].Name -ne "SikaTimeTracker.App.exe") {
-    throw "Portable output must contain exactly one SikaTimeTracker.App.exe file."
+if ($publishedFiles.Count -ne 1 -or $publishedFiles[0].Name -ne "SikaTimeTracker.exe") {
+    throw "Portable output must contain exactly one SikaTimeTracker.exe file."
 }
 
 Write-Host "Portable executable created in: $publishDirectory"

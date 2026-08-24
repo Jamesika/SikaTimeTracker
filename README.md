@@ -39,7 +39,7 @@ dotnet test SikaTimeTracker.sln --configuration Debug
 开发构建使用 self-contained Windows App SDK。可执行程序位于：
 
 ```text
-src\SikaTimeTracker.App\bin\x64\Debug\net8.0-windows10.0.19041.0\SikaTimeTracker.App.exe
+src\SikaTimeTracker.App\bin\x64\Debug\net8.0-windows10.0.19041.0\SikaTimeTracker.exe
 ```
 
 ## 生成便携版
@@ -51,7 +51,7 @@ src\SikaTimeTracker.App\bin\x64\Debug\net8.0-windows10.0.19041.0\SikaTimeTracker
 发布脚本会先运行测试，再生成 x64、免安装、self-contained 的单文件程序：
 
 ```text
-artifacts\publish\win-x64\SikaTimeTracker.App.exe
+artifacts\publish\win-x64\SikaTimeTracker.exe
 ```
 
 WinUI 3 的单文件发布会在首次运行时将依赖释放到系统临时目录，这是 Windows App SDK 的标准行为。
