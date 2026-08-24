@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SikaTimeTracker.Core.Tests"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SikaTimeTracker.App", "src\SikaTimeTracker.App\SikaTimeTracker.App.csproj", "{BFA5362E-3A48-4A41-A163-04D76964639C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SikaTimeTracker.Infrastructure.Tests", "tests\SikaTimeTracker.Infrastructure.Tests\SikaTimeTracker.Infrastructure.Tests.csproj", "{20855615-F523-4F5F-B498-150C19D50C1B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -40,11 +42,16 @@ Global
 		{BFA5362E-3A48-4A41-A163-04D76964639C}.Debug|Any CPU.Build.0 = Debug|x64
 		{BFA5362E-3A48-4A41-A163-04D76964639C}.Release|Any CPU.ActiveCfg = Release|x64
 		{BFA5362E-3A48-4A41-A163-04D76964639C}.Release|Any CPU.Build.0 = Release|x64
+		{20855615-F523-4F5F-B498-150C19D50C1B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{20855615-F523-4F5F-B498-150C19D50C1B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{20855615-F523-4F5F-B498-150C19D50C1B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{20855615-F523-4F5F-B498-150C19D50C1B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{1FD0BCAC-1F79-48FD-9F3C-90C2B9105978} = {AE612C24-93C7-498C-8542-C8E92EB818F3}
 		{D5C9D65E-0EED-4201-A948-54CF0CC71E6B} = {AE612C24-93C7-498C-8542-C8E92EB818F3}
 		{B9EB2E46-D5CC-4A81-9DC4-5448980E0439} = {15FB0F57-E63F-4309-BE63-ADC41682E5F4}
 		{BFA5362E-3A48-4A41-A163-04D76964639C} = {AE612C24-93C7-498C-8542-C8E92EB818F3}
+		{20855615-F523-4F5F-B498-150C19D50C1B} = {15FB0F57-E63F-4309-BE63-ADC41682E5F4}
 	EndGlobalSection
 EndGlobal
