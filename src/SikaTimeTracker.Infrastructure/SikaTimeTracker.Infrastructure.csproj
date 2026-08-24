@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.Win32.SystemEvents" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SikaTimeTracker.Core\SikaTimeTracker.Core.csproj" />

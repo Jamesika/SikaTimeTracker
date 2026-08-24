@@ -22,6 +22,8 @@ public interface IActivityStore
 
     Task<bool> StopActivityAsync(long activityId, DateTimeOffset endTimeUtc, CancellationToken cancellationToken = default);
 
+    Task<bool> DeleteActivityAsync(long activityId, CancellationToken cancellationToken = default);
+
     Task<int> RecoverOpenActivitiesAsync(CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ActivitySegment>> GetActivitiesAsync(

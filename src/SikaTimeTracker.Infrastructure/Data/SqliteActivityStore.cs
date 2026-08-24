@@ -297,6 +297,15 @@ public sealed class SqliteActivityStore : IActivityStore
             cancellationToken);
     }
 
+    public async Task<bool> DeleteActivityAsync(long activityId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM ActivitySegments WHERE Id = $id;";
+        AddParameter(command, "$id", activityId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     public async Task<int> RecoverOpenActivitiesAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);

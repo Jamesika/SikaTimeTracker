@@ -1,6 +1,8 @@
 using Microsoft.UI.Xaml;
 using SikaTimeTracker.Core.Contracts;
+using SikaTimeTracker.Core.Services;
 using SikaTimeTracker.Infrastructure.Data;
+using SikaTimeTracker.Infrastructure.Tracking;
 
 namespace SikaTimeTracker;
 
@@ -8,6 +10,7 @@ public partial class App : Application
 {
     private Window? _window;
     private IActivityStore? _activityStore;
+    private ActivityTrackingService? _trackingService;
 
     public App()
     {
@@ -20,10 +23,14 @@ public partial class App : Application
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "SikaTimeTracker");
         _activityStore = new SqliteActivityStore(Path.Combine(dataDirectory, "activity.db"));
-        await _activityStore.InitializeAsync();
-        await _activityStore.RecoverOpenActivitiesAsync();
+        _trackingService = new ActivityTrackingService(
+            _activityStore,
+            new WindowsForegroundWindowSource(),
+            new WindowsSystemActivitySource(),
+            new ClassificationEngine());
 
-        _window = new MainWindow();
+        _window = new MainWindow(_trackingService);
         _window.Activate();
+        await _trackingService.StartAsync();
     }
 }

@@ -19,9 +19,10 @@
                 <StackPanel Margin="8,12" Spacing="4">
                     <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="追踪状态" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Ellipse Width="8" Height="8" Fill="{ThemeResource SystemFillColorSuccessBrush}" />
-                        <TextBlock Text="准备就绪" />
+                        <Ellipse x:Name="StatusIndicator" Width="8" Height="8" Fill="{ThemeResource SystemFillColorSuccessBrush}" />
+                        <TextBlock x:Name="StatusText" Text="正在启动" />
                     </StackPanel>
+                    <Button x:Name="PauseButton" Margin="0,8,0,0" Click="OnPauseClicked" Content="暂停追踪" />
                 </StackPanel>
             </NavigationView.PaneFooter>
             <Grid x:Name="ContentHost" />
