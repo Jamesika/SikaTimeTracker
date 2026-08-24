@@ -1,0 +1,50 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{AE612C24-93C7-498C-8542-C8E92EB818F3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SikaTimeTracker.Core", "src\SikaTimeTracker.Core\SikaTimeTracker.Core.csproj", "{1FD0BCAC-1F79-48FD-9F3C-90C2B9105978}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SikaTimeTracker.Infrastructure", "src\SikaTimeTracker.Infrastructure\SikaTimeTracker.Infrastructure.csproj", "{D5C9D65E-0EED-4201-A948-54CF0CC71E6B}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{15FB0F57-E63F-4309-BE63-ADC41682E5F4}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SikaTimeTracker.Core.Tests", "tests\SikaTimeTracker.Core.Tests\SikaTimeTracker.Core.Tests.csproj", "{B9EB2E46-D5CC-4A81-9DC4-5448980E0439}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SikaTimeTracker.App", "src\SikaTimeTracker.App\SikaTimeTracker.App.csproj", "{BFA5362E-3A48-4A41-A163-04D76964639C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1FD0BCAC-1F79-48FD-9F3C-90C2B9105978}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1FD0BCAC-1F79-48FD-9F3C-90C2B9105978}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1FD0BCAC-1F79-48FD-9F3C-90C2B9105978}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1FD0BCAC-1F79-48FD-9F3C-90C2B9105978}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D5C9D65E-0EED-4201-A948-54CF0CC71E6B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D5C9D65E-0EED-4201-A948-54CF0CC71E6B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D5C9D65E-0EED-4201-A948-54CF0CC71E6B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D5C9D65E-0EED-4201-A948-54CF0CC71E6B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B9EB2E46-D5CC-4A81-9DC4-5448980E0439}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B9EB2E46-D5CC-4A81-9DC4-5448980E0439}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B9EB2E46-D5CC-4A81-9DC4-5448980E0439}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B9EB2E46-D5CC-4A81-9DC4-5448980E0439}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BFA5362E-3A48-4A41-A163-04D76964639C}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{BFA5362E-3A48-4A41-A163-04D76964639C}.Debug|Any CPU.Build.0 = Debug|x64
+		{BFA5362E-3A48-4A41-A163-04D76964639C}.Release|Any CPU.ActiveCfg = Release|x64
+		{BFA5362E-3A48-4A41-A163-04D76964639C}.Release|Any CPU.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{1FD0BCAC-1F79-48FD-9F3C-90C2B9105978} = {AE612C24-93C7-498C-8542-C8E92EB818F3}
+		{D5C9D65E-0EED-4201-A948-54CF0CC71E6B} = {AE612C24-93C7-498C-8542-C8E92EB818F3}
+		{B9EB2E46-D5CC-4A81-9DC4-5448980E0439} = {15FB0F57-E63F-4309-BE63-ADC41682E5F4}
+		{BFA5362E-3A48-4A41-A163-04D76964639C} = {AE612C24-93C7-498C-8542-C8E92EB818F3}
+	EndGlobalSection
+EndGlobal
