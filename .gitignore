@@ -1,0 +1,39 @@
+# Build output
+bin/
+obj/
+artifacts/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.rsuser
+
+# Test and coverage output
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Packages and generated deployment output
+packages/
+AppPackages/
+BundleArtifacts/
+*.appx
+*.appxbundle
+*.msix
+*.msixbundle
+*.cer
+
+# Local runtime data
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
