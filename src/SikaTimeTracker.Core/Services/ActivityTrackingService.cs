@@ -9,7 +9,7 @@ public sealed class ActivityTrackingService : IAsyncDisposable
     private readonly IForegroundWindowSource _windowSource;
     private readonly ISystemActivitySource _systemSource;
     private readonly ClassificationEngine _classificationEngine;
-    private readonly ActivityTrackingOptions _options;
+    private ActivityTrackingOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
@@ -100,6 +100,33 @@ public sealed class ActivityTrackingService : IAsyncDisposable
             }
             else if (_isSystemInteractive && !_isIdle)
             {
+                await StartWindowAsync(_windowSource.GetCurrentWindow(), now, cancellationToken);
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        RaiseStatusChanged();
+    }
+
+    public async Task UpdateConfigurationAsync(
+        ActivityTrackingOptions options,
+        bool captureWindowTitles,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var titleCaptureChanged = _windowSource.CaptureWindowTitles != captureWindowTitles;
+            _options = options;
+            _windowSource.CaptureWindowTitles = captureWindowTitles;
+            if (titleCaptureChanged && _isStarted && !_isPaused && !_isIdle && _isSystemInteractive)
+            {
+                var now = _timeProvider.GetUtcNow();
+                await StopCurrentActivityAsync(now, cancellationToken);
                 await StartWindowAsync(_windowSource.GetCurrentWindow(), now, cancellationToken);
             }
         }

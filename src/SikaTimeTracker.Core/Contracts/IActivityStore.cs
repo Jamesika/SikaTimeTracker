@@ -35,6 +35,8 @@ public interface IActivityStore
 
     Task<IReadOnlyList<ActivitySegment>> GetAllActivitiesAsync(CancellationToken cancellationToken = default);
 
+    Task<int> DeleteAllActivitiesAsync(CancellationToken cancellationToken = default);
+
     Task<bool> UpdateActivityClassificationAsync(
         long activityId,
         long categoryId,

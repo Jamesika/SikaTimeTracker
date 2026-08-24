@@ -13,17 +13,32 @@ public sealed partial class MainWindow : Window
 {
     private readonly ActivityTrackingService _trackingService;
     private readonly IActivityStore _activityStore;
-    private bool _allowClose;
+    private readonly ApplicationSettingsService _settingsService;
+    private readonly IStartupService _startupService;
+    private readonly string _dataDirectory;
+    private AppPreferences _preferences;
+    private bool _exitRequested;
 
-    public MainWindow(ActivityTrackingService trackingService, IActivityStore activityStore)
+    public MainWindow(
+        ActivityTrackingService trackingService,
+        IActivityStore activityStore,
+        ApplicationSettingsService settingsService,
+        IStartupService startupService,
+        AppPreferences preferences,
+        string dataDirectory)
     {
         _trackingService = trackingService;
         _activityStore = activityStore;
+        _settingsService = settingsService;
+        _startupService = startupService;
+        _preferences = preferences;
+        _dataDirectory = dataDirectory;
         InitializeComponent();
         Title = "Sika Time Tracker";
         SystemBackdrop = new MicaBackdrop();
         AppWindow.Resize(new SizeInt32(1180, 760));
         RootNavigation.SelectedItem = RootNavigation.MenuItems[0];
+        ApplyTheme(_preferences.Theme);
         ShowPage("activity");
         _trackingService.StatusChanged += OnTrackingStatusChanged;
         AppWindow.Closing += OnWindowClosing;
@@ -44,18 +59,45 @@ public sealed partial class MainWindow : Window
         });
     }
 
-    private async void OnWindowClosing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
+    public void ShowFromTray()
     {
-        if (_allowClose)
+        AppWindow.Show();
+        Activate();
+    }
+
+    public void HideToTray()
+    {
+        AppWindow.Hide();
+    }
+
+    public void ApplyPreferences(AppPreferences preferences)
+    {
+        _preferences = preferences;
+        ApplyTheme(preferences.Theme);
+    }
+
+    public async Task ExitAsync()
+    {
+        if (_exitRequested)
+        {
+            return;
+        }
+
+        _exitRequested = true;
+        _trackingService.StatusChanged -= OnTrackingStatusChanged;
+        await _trackingService.DisposeAsync();
+        Application.Current.Exit();
+    }
+
+    private void OnWindowClosing(Microsoft.UI.Windowing.AppWindow sender, Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
+    {
+        if (_exitRequested)
         {
             return;
         }
 
         args.Cancel = true;
-        _trackingService.StatusChanged -= OnTrackingStatusChanged;
-        await _trackingService.DisposeAsync();
-        _allowClose = true;
-        Application.Current.Exit();
+        HideToTray();
     }
 
     private void OnSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -72,8 +114,25 @@ public sealed partial class MainWindow : Window
         ContentHost.Children.Add(tag switch
         {
             "rules" => new RulesView(_activityStore, _trackingService),
-            "settings" => new SettingsView(),
+            "settings" => new SettingsView(
+                _activityStore,
+                _settingsService,
+                _startupService,
+                _trackingService,
+                _preferences,
+                _dataDirectory,
+                ApplyPreferences),
             _ => new ActivityView(_activityStore)
         });
+    }
+
+    private void ApplyTheme(AppTheme theme)
+    {
+        RootNavigation.RequestedTheme = theme switch
+        {
+            AppTheme.Light => ElementTheme.Light,
+            AppTheme.Dark => ElementTheme.Dark,
+            _ => ElementTheme.Default
+        };
     }
 }

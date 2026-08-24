@@ -127,6 +127,8 @@ public sealed class ActivityTrackingServiceTests
 
         public WindowSnapshot? Current { get; set; }
 
+        public bool CaptureWindowTitles { get; set; } = true;
+
         public WindowSnapshot? GetCurrentWindow() => Current;
 
         public void Start()
@@ -267,6 +269,13 @@ public sealed class ActivityTrackingServiceTests
         public Task<IReadOnlyList<ActivitySegment>> GetAllActivitiesAsync(CancellationToken cancellationToken = default)
         {
             return Task.FromResult<IReadOnlyList<ActivitySegment>>(Activities);
+        }
+
+        public Task<int> DeleteAllActivitiesAsync(CancellationToken cancellationToken = default)
+        {
+            var count = Activities.Count;
+            Activities.Clear();
+            return Task.FromResult(count);
         }
 
         public Task<bool> UpdateActivityClassificationAsync(long activityId, long categoryId, long? ruleId, bool isManual, CancellationToken cancellationToken = default)

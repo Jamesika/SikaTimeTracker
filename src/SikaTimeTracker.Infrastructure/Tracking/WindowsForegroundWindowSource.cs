@@ -24,6 +24,8 @@ public sealed class WindowsForegroundWindowSource : IForegroundWindowSource
 
     public event EventHandler<WindowChangedEventArgs>? ForegroundWindowChanged;
 
+    public bool CaptureWindowTitles { get; set; } = true;
+
     public void Start()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -87,7 +89,7 @@ public sealed class WindowsForegroundWindowSource : IForegroundWindowSource
             new WindowChangedEventArgs(CreateSnapshot(windowHandle, DateTimeOffset.UtcNow)));
     }
 
-    private static WindowSnapshot? CreateSnapshot(nint windowHandle, DateTimeOffset observedAtUtc)
+    private WindowSnapshot? CreateSnapshot(nint windowHandle, DateTimeOffset observedAtUtc)
     {
         if (windowHandle == 0)
         {
@@ -113,6 +115,11 @@ public sealed class WindowsForegroundWindowSource : IForegroundWindowSource
         catch (InvalidOperationException)
         {
             return null;
+        }
+
+        if (!CaptureWindowTitles)
+        {
+            return new WindowSnapshot(windowHandle, processName, string.Empty, observedAtUtc);
         }
 
         var titleLength = GetWindowTextLength(windowHandle);

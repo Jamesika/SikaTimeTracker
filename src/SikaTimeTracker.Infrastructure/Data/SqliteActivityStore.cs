@@ -388,6 +388,14 @@ public sealed class SqliteActivityStore : IActivityStore
         return activities;
     }
 
+    public async Task<int> DeleteAllActivitiesAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM ActivitySegments;";
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<bool> UpdateActivityClassificationAsync(
         long activityId,
         long categoryId,

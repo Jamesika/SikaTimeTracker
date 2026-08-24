@@ -18,6 +18,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\SikaTimeTracker.Core\SikaTimeTracker.Core.csproj" />
     <ProjectReference Include="..\SikaTimeTracker.Infrastructure\SikaTimeTracker.Infrastructure.csproj" />
   </ItemGroup>

@@ -1,7 +1,9 @@
 using Microsoft.Data.Sqlite;
+using System.Runtime.Versioning;
 using SikaTimeTracker.Core.Models;
 using SikaTimeTracker.Infrastructure.Data;
 using SikaTimeTracker.Core.Services;
+using SikaTimeTracker.Infrastructure.SystemIntegration;
 
 namespace SikaTimeTracker.Infrastructure.Tests;
 
@@ -127,5 +129,39 @@ public sealed class SqliteActivityStoreTests
         var activities = await _store.GetAllActivitiesAsync();
         Assert.AreEqual(2, activities.Single(activity => activity.Id == automaticId).CategoryId);
         Assert.AreEqual(3, activities.Single(activity => activity.Id == manualId).CategoryId);
+    }
+
+    [TestMethod]
+    public async Task PreferencesAndCsvExport_RoundTripWithoutLosingWindowData()
+    {
+        var settings = new ApplicationSettingsService(_store);
+        var preferences = new AppPreferences
+        {
+            IdleDetectionEnabled = false,
+            IdleThresholdMinutes = 12,
+            MinimumActivitySeconds = 4,
+            RecordWindowTitles = false,
+            Theme = AppTheme.Dark
+        };
+        await settings.SaveAsync(preferences);
+        var loaded = await settings.LoadAsync();
+        Assert.AreEqual(preferences, loaded);
+
+        var start = new DateTimeOffset(2026, 8, 25, 8, 0, 0, TimeSpan.Zero);
+        var activityId = await _store.StartActivityAsync(new ActivityDraft(start, "Code", "Project, \"quoted\"", 2));
+        await _store.StopActivityAsync(activityId, start.AddMinutes(1));
+        var exporter = new ActivityCsvExporter(_store);
+        var exportPath = await exporter.ExportAsync(Path.Combine(_testDirectory, "exports"));
+        var csv = await File.ReadAllTextAsync(exportPath);
+        StringAssert.Contains(csv, "Project, \"\"quoted\"\"");
+    }
+
+    [TestMethod]
+    [SupportedOSPlatform("windows")]
+    public void StartupCommand_QuotesPortableExecutablePath()
+    {
+        var command = WindowsStartupService.BuildCommandLine(@"C:\Portable Apps\SikaTimeTracker.exe", startMinimized: true);
+
+        Assert.AreEqual("\"C:\\Portable Apps\\SikaTimeTracker.exe\" --minimized", command);
     }
 }
