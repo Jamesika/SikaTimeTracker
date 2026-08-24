@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using SikaTimeTracker.Core.Contracts;
 using SikaTimeTracker.Core.Models;
 using SikaTimeTracker.Core.Services;
 using SikaTimeTracker.Views;
@@ -11,11 +12,13 @@ namespace SikaTimeTracker;
 public sealed partial class MainWindow : Window
 {
     private readonly ActivityTrackingService _trackingService;
+    private readonly IActivityStore _activityStore;
     private bool _allowClose;
 
-    public MainWindow(ActivityTrackingService trackingService)
+    public MainWindow(ActivityTrackingService trackingService, IActivityStore activityStore)
     {
         _trackingService = trackingService;
+        _activityStore = activityStore;
         InitializeComponent();
         Title = "Sika Time Tracker";
         SystemBackdrop = new MicaBackdrop();
@@ -70,7 +73,7 @@ public sealed partial class MainWindow : Window
         {
             "rules" => new RulesView(),
             "settings" => new SettingsView(),
-            _ => new ActivityView()
+            _ => new ActivityView(_activityStore)
         });
     }
 }

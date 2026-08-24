@@ -29,7 +29,7 @@ public partial class App : Application
             new WindowsSystemActivitySource(),
             new ClassificationEngine());
 
-        _window = new MainWindow(_trackingService);
+        _window = new MainWindow(_trackingService, _activityStore);
         _window.Activate();
         await _trackingService.StartAsync();
     }
