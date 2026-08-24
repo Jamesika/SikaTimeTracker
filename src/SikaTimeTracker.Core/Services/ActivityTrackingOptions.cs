@@ -13,4 +13,6 @@ public sealed record ActivityTrackingOptions
     public TimeSpan MaximumTrustedGap { get; init; } = TimeSpan.FromMinutes(1);
 
     public TimeSpan MinimumActivityDuration { get; init; } = TimeSpan.FromSeconds(2);
+
+    public TimeSpan AdjacentMergeGap { get; init; } = TimeSpan.FromSeconds(10);
 }

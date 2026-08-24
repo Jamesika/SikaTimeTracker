@@ -292,6 +292,13 @@ public sealed partial class RulesView : UserControl
             Text = existing?.Pattern ?? string.Empty,
             PlaceholderText = "例如 Code 或 ^Visual Studio.*"
         };
+        var testBox = new TextBox
+        {
+            Header = "测试文本",
+            PlaceholderText = "输入一个进程名称或窗口标题"
+        };
+        var testResult = new TextBlock { TextWrapping = TextWrapping.Wrap };
+        var testButton = new Button { Content = "测试匹配" };
         var priorityBox = new NumberBox
         {
             Header = "优先级（数值越大越先匹配）",
@@ -310,6 +317,27 @@ public sealed partial class RulesView : UserControl
             Header = "启用规则",
             IsOn = existing?.IsEnabled ?? true
         };
+        testButton.Click += (_, _) =>
+        {
+            var candidate = BuildRule();
+            var validationError = _classificationEngine.ValidatePattern(candidate);
+            if (validationError is not null)
+            {
+                testResult.Text = validationError;
+                testResult.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Red);
+                return;
+            }
+
+            var result = _classificationEngine.Classify(
+                testBox.Text,
+                testBox.Text,
+                [candidate],
+                defaultCategoryId: -1);
+            var matched = result.RuleId.HasValue;
+            testResult.Text = matched ? "匹配成功" : "未匹配";
+            testResult.Foreground = new SolidColorBrush(
+                matched ? Microsoft.UI.Colors.Green : Microsoft.UI.Colors.Orange);
+        };
         var errorText = new TextBlock
         {
             Foreground = new SolidColorBrush(Microsoft.UI.Colors.Red),
@@ -318,8 +346,8 @@ public sealed partial class RulesView : UserControl
         var content = new StackPanel { Spacing = 12, MinWidth = 400 };
         foreach (var element in new FrameworkElement[]
                  {
-                     categoryBox, targetBox, matchTypeBox, patternBox, priorityBox,
-                     ignoreCaseSwitch, enabledSwitch, errorText
+                     categoryBox, targetBox, matchTypeBox, patternBox, testBox, testButton, testResult,
+                     priorityBox, ignoreCaseSwitch, enabledSwitch, errorText
                  })
         {
             content.Children.Add(element);

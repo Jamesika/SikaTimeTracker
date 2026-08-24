@@ -45,6 +45,7 @@ public sealed partial class SettingsView : UserControl
         IdleDetectionToggle.IsOn = _preferences.IdleDetectionEnabled;
         IdleMinutesBox.Value = _preferences.IdleThresholdMinutes;
         MinimumSecondsBox.Value = _preferences.MinimumActivitySeconds;
+        MergeGapSecondsBox.Value = _preferences.MergeGapSeconds;
         RecordTitlesToggle.IsOn = _preferences.RecordWindowTitles;
         var themes = new[]
         {
@@ -69,7 +70,7 @@ public sealed partial class SettingsView : UserControl
                 IdleDetectionEnabled = IdleDetectionToggle.IsOn,
                 IdleThresholdMinutes = GetNumber(IdleMinutesBox, 5),
                 MinimumActivitySeconds = GetNumber(MinimumSecondsBox, 2),
-                MergeGapSeconds = _preferences.MergeGapSeconds,
+                MergeGapSeconds = GetNumber(MergeGapSecondsBox, 10),
                 RecordWindowTitles = RecordTitlesToggle.IsOn,
                 Theme = ((ThemeChoice)ThemeBox.SelectedItem).Value
             };
@@ -80,7 +81,8 @@ public sealed partial class SettingsView : UserControl
                 {
                     IdleDetectionEnabled = _preferences.IdleDetectionEnabled,
                     IdleThreshold = TimeSpan.FromMinutes(_preferences.IdleThresholdMinutes),
-                    MinimumActivityDuration = TimeSpan.FromSeconds(_preferences.MinimumActivitySeconds)
+                    MinimumActivityDuration = TimeSpan.FromSeconds(_preferences.MinimumActivitySeconds),
+                    AdjacentMergeGap = TimeSpan.FromSeconds(_preferences.MergeGapSeconds)
                 },
                 _preferences.RecordWindowTitles);
             _applyPreferences(_preferences);

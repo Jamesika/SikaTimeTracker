@@ -306,6 +306,76 @@ public sealed class SqliteActivityStore : IActivityStore
             cancellationToken);
     }
 
+    public async Task<bool> TryMergeWithPreviousAsync(
+        long activityId,
+        TimeSpan maximumGap,
+        CancellationToken cancellationToken = default)
+    {
+        if (maximumGap <= TimeSpan.Zero)
+        {
+            return false;
+        }
+
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+        var current = await ReadActivityByIdAsync(connection, transaction, activityId, cancellationToken);
+        if (current?.EndTimeUtc is null)
+        {
+            return false;
+        }
+
+        ActivitySegment? previous = null;
+        await using (var previousCommand = connection.CreateCommand())
+        {
+            previousCommand.Transaction = transaction;
+            previousCommand.CommandText = """
+                SELECT Id, StartTimeUtc, EndTimeUtc, LastHeartbeatUtc, ProcessName, WindowTitle,
+                       CategoryId, ClassificationRuleId, IsManuallyClassified
+                FROM ActivitySegments
+                WHERE Id <> $id
+                  AND EndTimeUtc IS NOT NULL
+                  AND StartTimeUtc <= $currentStartUtc
+                ORDER BY StartTimeUtc DESC, Id DESC
+                LIMIT 1;
+                """;
+            AddParameter(previousCommand, "$id", activityId);
+            AddParameter(previousCommand, "$currentStartUtc", FormatUtc(current.StartTimeUtc));
+            await using var reader = await previousCommand.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                previous = ReadActivity(reader);
+            }
+        }
+
+        if (previous?.EndTimeUtc is null
+            || current.StartTimeUtc < previous.EndTimeUtc.Value
+            || current.StartTimeUtc - previous.EndTimeUtc.Value > maximumGap
+            || !string.Equals(current.ProcessName, previous.ProcessName, StringComparison.Ordinal)
+            || !string.Equals(current.WindowTitle, previous.WindowTitle, StringComparison.Ordinal)
+            || current.CategoryId != previous.CategoryId
+            || current.ClassificationRuleId != previous.ClassificationRuleId
+            || current.IsManuallyClassified != previous.IsManuallyClassified)
+        {
+            return false;
+        }
+
+        await using var mergeCommand = connection.CreateCommand();
+        mergeCommand.Transaction = transaction;
+        mergeCommand.CommandText = """
+            UPDATE ActivitySegments
+            SET EndTimeUtc = $endTimeUtc, LastHeartbeatUtc = $heartbeatUtc
+            WHERE Id = $previousId;
+            DELETE FROM ActivitySegments WHERE Id = $currentId;
+            """;
+        AddParameter(mergeCommand, "$endTimeUtc", FormatUtc(current.EndTimeUtc.Value));
+        AddParameter(mergeCommand, "$heartbeatUtc", FormatUtc(current.LastHeartbeatUtc));
+        AddParameter(mergeCommand, "$previousId", previous.Id);
+        AddParameter(mergeCommand, "$currentId", current.Id);
+        var changed = await mergeCommand.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return changed == 2;
+    }
+
     public async Task<bool> DeleteActivityAsync(long activityId, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
@@ -467,6 +537,25 @@ public sealed class SqliteActivityStore : IActivityStore
         command.CommandText = "PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;";
         await command.ExecuteNonQueryAsync(cancellationToken);
         return connection;
+    }
+
+    private static async Task<ActivitySegment?> ReadActivityByIdAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long activityId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT Id, StartTimeUtc, EndTimeUtc, LastHeartbeatUtc, ProcessName, WindowTitle,
+                   CategoryId, ClassificationRuleId, IsManuallyClassified
+            FROM ActivitySegments
+            WHERE Id = $id;
+            """;
+        AddParameter(command, "$id", activityId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadActivity(reader) : null;
     }
 
     private static string FormatUtc(DateTimeOffset value)

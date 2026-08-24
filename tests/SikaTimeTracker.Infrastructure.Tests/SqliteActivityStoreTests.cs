@@ -164,4 +164,25 @@ public sealed class SqliteActivityStoreTests
 
         Assert.AreEqual("\"C:\\Portable Apps\\SikaTimeTracker.exe\" --minimized", command);
     }
+
+    [TestMethod]
+    public async Task AdjacentSameWindowActivities_MergeWithinConfiguredGap()
+    {
+        var start = new DateTimeOffset(2026, 8, 25, 8, 0, 0, TimeSpan.Zero);
+        var firstId = await _store.StartActivityAsync(new ActivityDraft(start, "Code", "Editor", 2));
+        await _store.StopActivityAsync(firstId, start.AddMinutes(1));
+        var secondId = await _store.StartActivityAsync(new ActivityDraft(
+            start.AddMinutes(1).AddSeconds(5),
+            "Code",
+            "Editor",
+            2));
+        await _store.StopActivityAsync(secondId, start.AddMinutes(2));
+
+        Assert.IsTrue(await _store.TryMergeWithPreviousAsync(secondId, TimeSpan.FromSeconds(10)));
+
+        var activities = await _store.GetAllActivitiesAsync();
+        Assert.HasCount(1, activities);
+        Assert.AreEqual(firstId, activities[0].Id);
+        Assert.AreEqual(start.AddMinutes(2), activities[0].EndTimeUtc);
+    }
 }

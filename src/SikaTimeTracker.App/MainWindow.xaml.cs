@@ -19,6 +19,8 @@ public sealed partial class MainWindow : Window
     private AppPreferences _preferences;
     private bool _exitRequested;
 
+    public event EventHandler? Exiting;
+
     public MainWindow(
         ActivityTrackingService trackingService,
         IActivityStore activityStore,
@@ -86,6 +88,7 @@ public sealed partial class MainWindow : Window
         _exitRequested = true;
         _trackingService.StatusChanged -= OnTrackingStatusChanged;
         await _trackingService.DisposeAsync();
+        Exiting?.Invoke(this, EventArgs.Empty);
         Application.Current.Exit();
     }
 

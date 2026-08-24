@@ -241,6 +241,11 @@ public sealed class ActivityTrackingServiceTests
             }));
         }
 
+        public Task<bool> TryMergeWithPreviousAsync(long activityId, TimeSpan maximumGap, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(false);
+        }
+
         public Task<bool> DeleteActivityAsync(long activityId, CancellationToken cancellationToken = default)
         {
             return Task.FromResult(Activities.RemoveAll(activity => activity.Id == activityId) > 0);

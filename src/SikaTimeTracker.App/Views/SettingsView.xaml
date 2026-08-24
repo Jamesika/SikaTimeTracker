@@ -40,6 +40,12 @@
                             Minimum="0"
                             Maximum="60"
                             SpinButtonPlacementMode="Inline" />
+                        <NumberBox
+                            x:Name="MergeGapSecondsBox"
+                            Header="相邻同窗口记录合并间隔（秒）"
+                            Minimum="0"
+                            Maximum="300"
+                            SpinButtonPlacementMode="Inline" />
                     </StackPanel>
                 </Border>
 

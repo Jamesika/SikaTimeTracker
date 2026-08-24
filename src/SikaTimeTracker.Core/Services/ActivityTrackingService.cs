@@ -375,7 +375,13 @@ public sealed class ActivityTrackingService : IAsyncDisposable
         }
         else
         {
-            await _store.StopActivityAsync(activityId, endUtc, cancellationToken);
+            if (await _store.StopActivityAsync(activityId, endUtc, cancellationToken))
+            {
+                await _store.TryMergeWithPreviousAsync(
+                    activityId,
+                    _options.AdjacentMergeGap,
+                    cancellationToken);
+            }
         }
 
         _currentActivityId = null;
