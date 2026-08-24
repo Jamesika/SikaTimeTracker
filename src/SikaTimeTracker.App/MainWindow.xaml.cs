@@ -71,7 +71,7 @@ public sealed partial class MainWindow : Window
         ContentHost.Children.Clear();
         ContentHost.Children.Add(tag switch
         {
-            "rules" => new RulesView(),
+            "rules" => new RulesView(_activityStore, _trackingService),
             "settings" => new SettingsView(),
             _ => new ActivityView(_activityStore)
         });

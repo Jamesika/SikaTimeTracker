@@ -278,14 +278,34 @@ public sealed partial class ActivityView : UserControl
         details.Children.Add(new TextBlock { Text = item.TimeText + " · " + item.DurationText });
         details.Children.Add(new TextBlock { Text = item.Activity.ProcessName, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         details.Children.Add(new TextBlock { Text = item.Activity.WindowTitle, TextWrapping = TextWrapping.Wrap });
+        var categoryBox = new ComboBox
+        {
+            Header = "手动分类",
+            ItemsSource = _categories,
+            DisplayMemberPath = nameof(Category.Name),
+            SelectedItem = _categories.FirstOrDefault(category => category.Id == item.Activity.CategoryId),
+            MinWidth = 260
+        };
+        details.Children.Add(categoryBox);
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
             Title = "活动详情",
             Content = details,
-            CloseButtonText = "关闭"
+            PrimaryButtonText = "保存分类",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary
         };
-        await dialog.ShowAsync();
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary
+            && categoryBox.SelectedItem is Category category)
+        {
+            await _store.UpdateActivityClassificationAsync(
+                item.Activity.ActivityId,
+                category.Id,
+                ruleId: null,
+                isManual: true);
+            await RefreshAsync();
+        }
     }
 
     private long? SelectedCategoryId => (CategoryFilter.SelectedItem as CategoryFilterItem)?.Id;

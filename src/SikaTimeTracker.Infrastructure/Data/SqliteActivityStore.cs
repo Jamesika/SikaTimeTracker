@@ -162,6 +162,15 @@ public sealed class SqliteActivityStore : IActivityStore
         return category with { Name = category.Name.Trim() };
     }
 
+    public async Task<bool> DeleteCategoryAsync(long categoryId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM Categories WHERE Id = $id AND IsDefault = 0;";
+        AddParameter(command, "$id", categoryId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
     public async Task<IReadOnlyList<ClassificationRule>> GetRulesAsync(CancellationToken cancellationToken = default)
     {
         var rules = new List<ClassificationRule>();
@@ -359,6 +368,26 @@ public sealed class SqliteActivityStore : IActivityStore
         return activities;
     }
 
+    public async Task<IReadOnlyList<ActivitySegment>> GetAllActivitiesAsync(CancellationToken cancellationToken = default)
+    {
+        var activities = new List<ActivitySegment>();
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, StartTimeUtc, EndTimeUtc, LastHeartbeatUtc, ProcessName, WindowTitle,
+                   CategoryId, ClassificationRuleId, IsManuallyClassified
+            FROM ActivitySegments
+            ORDER BY StartTimeUtc, Id;
+            """;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            activities.Add(ReadActivity(reader));
+        }
+
+        return activities;
+    }
+
     public async Task<bool> UpdateActivityClassificationAsync(
         long activityId,
         long categoryId,
@@ -441,6 +470,20 @@ public sealed class SqliteActivityStore : IActivityStore
     {
         return DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind)
             .ToUniversalTime();
+    }
+
+    private static ActivitySegment ReadActivity(SqliteDataReader reader)
+    {
+        return new ActivitySegment(
+            reader.GetInt64(0),
+            ParseUtc(reader.GetString(1)),
+            reader.IsDBNull(2) ? null : ParseUtc(reader.GetString(2)),
+            ParseUtc(reader.GetString(3)),
+            reader.GetString(4),
+            reader.GetString(5),
+            reader.GetInt64(6),
+            reader.IsDBNull(7) ? null : reader.GetInt64(7),
+            reader.GetBoolean(8));
     }
 
     private static void AddParameter(SqliteCommand command, string name, object? value)

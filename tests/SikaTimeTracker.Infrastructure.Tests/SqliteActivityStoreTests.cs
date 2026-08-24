@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using SikaTimeTracker.Core.Models;
 using SikaTimeTracker.Infrastructure.Data;
+using SikaTimeTracker.Core.Services;
 
 namespace SikaTimeTracker.Infrastructure.Tests;
 
@@ -94,5 +95,37 @@ public sealed class SqliteActivityStoreTests
         Assert.IsGreaterThan(0, rule.Id);
         Assert.AreEqual("5", await _store.GetSettingAsync("IdleMinutes"));
         Assert.IsTrue((await _store.GetRulesAsync()).Any(savedRule => savedRule.Id == rule.Id));
+    }
+
+    [TestMethod]
+    public async Task HistoricalReclassification_PreservesManualOverrides()
+    {
+        var rule = await _store.SaveRuleAsync(new ClassificationRule(
+            0,
+            CategoryId: 2,
+            RuleTarget.WindowTitle,
+            RuleMatchType.Contains,
+            "Code",
+            IgnoreCase: true,
+            Priority: 10));
+        Assert.IsGreaterThan(0, rule.Id);
+
+        var start = new DateTimeOffset(2026, 8, 25, 8, 0, 0, TimeSpan.Zero);
+        var automaticId = await _store.StartActivityAsync(new ActivityDraft(start, "Code", "Code Editor", 1));
+        await _store.StopActivityAsync(automaticId, start.AddMinutes(1));
+        var manualId = await _store.StartActivityAsync(new ActivityDraft(
+            start.AddMinutes(2),
+            "Code",
+            "Code Editor",
+            CategoryId: 3,
+            IsManuallyClassified: true));
+        await _store.StopActivityAsync(manualId, start.AddMinutes(3));
+
+        var service = new HistoricalReclassificationService(_store, new ClassificationEngine());
+        Assert.AreEqual(1, await service.ReclassifyAsync());
+
+        var activities = await _store.GetAllActivitiesAsync();
+        Assert.AreEqual(2, activities.Single(activity => activity.Id == automaticId).CategoryId);
+        Assert.AreEqual(3, activities.Single(activity => activity.Id == manualId).CategoryId);
     }
 }

@@ -189,6 +189,11 @@ public sealed class ActivityTrackingServiceTests
             throw new NotSupportedException();
         }
 
+        public Task<bool> DeleteCategoryAsync(long categoryId, CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<IReadOnlyList<ClassificationRule>> GetRulesAsync(CancellationToken cancellationToken = default)
         {
             return Task.FromResult<IReadOnlyList<ClassificationRule>>([]);
@@ -255,6 +260,11 @@ public sealed class ActivityTrackingServiceTests
         }
 
         public Task<IReadOnlyList<ActivitySegment>> GetActivitiesAsync(DateTimeOffset rangeStartUtc, DateTimeOffset rangeEndUtc, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyList<ActivitySegment>>(Activities);
+        }
+
+        public Task<IReadOnlyList<ActivitySegment>> GetAllActivitiesAsync(CancellationToken cancellationToken = default)
         {
             return Task.FromResult<IReadOnlyList<ActivitySegment>>(Activities);
         }

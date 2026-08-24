@@ -10,6 +10,8 @@ public interface IActivityStore
 
     Task<Category> SaveCategoryAsync(Category category, CancellationToken cancellationToken = default);
 
+    Task<bool> DeleteCategoryAsync(long categoryId, CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<ClassificationRule>> GetRulesAsync(CancellationToken cancellationToken = default);
 
     Task<ClassificationRule> SaveRuleAsync(ClassificationRule rule, CancellationToken cancellationToken = default);
@@ -30,6 +32,8 @@ public interface IActivityStore
         DateTimeOffset rangeStartUtc,
         DateTimeOffset rangeEndUtc,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<ActivitySegment>> GetAllActivitiesAsync(CancellationToken cancellationToken = default);
 
     Task<bool> UpdateActivityClassificationAsync(
         long activityId,
