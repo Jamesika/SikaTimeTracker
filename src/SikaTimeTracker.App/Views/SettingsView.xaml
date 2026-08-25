@@ -53,7 +53,7 @@
                     <StackPanel Spacing="16">
                         <TextBlock Style="{StaticResource SectionTitleStyle}" Text="外观与隐私" />
                         <ComboBox x:Name="ThemeBox" Header="主题" DisplayMemberPath="Name" />
-                        <ToggleSwitch x:Name="RecordTitlesToggle" Header="记录窗口标题" />
+                        <ToggleSwitch x:Name="RecordTitlesToggle" Header="记录窗口标题和网页域名" />
                         <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="关闭后仅保存进程名称；更改会立即结束当前活动段并以新的隐私设置继续。" TextWrapping="Wrap" />
                     </StackPanel>
                 </Border>

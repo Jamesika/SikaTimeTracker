@@ -29,7 +29,8 @@ public sealed class HistoricalReclassificationService
                 activity.ProcessName,
                 activity.WindowTitle,
                 rules,
-                defaultCategoryId);
+                defaultCategoryId,
+                activity.WebsiteDomain);
             if (activity.CategoryId == result.CategoryId
                 && activity.ClassificationRuleId == result.RuleId)
             {

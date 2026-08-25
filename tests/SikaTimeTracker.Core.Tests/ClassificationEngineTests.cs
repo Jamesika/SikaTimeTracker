@@ -44,6 +44,29 @@ public sealed class ClassificationEngineTests
     }
 
     [TestMethod]
+    public void Classify_CanMatchBrowserWebsiteDomain()
+    {
+        var rule = new ClassificationRule(
+            8,
+            2,
+            RuleTarget.ProcessNameOrWindowTitle,
+            RuleMatchType.RegularExpression,
+            "^github\\.com$",
+            IgnoreCase: true,
+            Priority: 10);
+
+        var result = _engine.Classify(
+            "msedge",
+            "Repository - Microsoft Edge",
+            [rule],
+            defaultCategoryId: 1,
+            websiteDomain: "github.com");
+
+        Assert.AreEqual(2, result.CategoryId);
+        Assert.AreEqual(8, result.RuleId);
+    }
+
+    [TestMethod]
     public void Classify_InvalidRegexFallsBackWithoutThrowing()
     {
         var rule = new ClassificationRule(

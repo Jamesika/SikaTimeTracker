@@ -148,7 +148,7 @@ public sealed partial class RulesView : UserControl
         patternBox.Text = string.Join(Environment.NewLine, item.Patterns);
         var helpText = new TextBlock
         {
-            Text = "正则会同时匹配进程名称和窗口标题，忽略大小写；列表顺序越靠前越优先。",
+            Text = "正则会同时匹配进程名称、窗口标题和浏览器网页域名，忽略大小写；列表顺序越靠前越优先。",
             Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray),
             TextWrapping = TextWrapping.Wrap
         };

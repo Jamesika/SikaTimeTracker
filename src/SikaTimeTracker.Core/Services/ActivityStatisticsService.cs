@@ -56,7 +56,8 @@ public sealed class ActivityStatisticsService
                 item.Activity.ProcessName,
                 item.Activity.WindowTitle,
                 item.Activity.CategoryId,
-                item.Activity.IsManuallyClassified))
+                item.Activity.IsManuallyClassified,
+                item.Activity.WebsiteDomain))
             .ToArray();
     }
 

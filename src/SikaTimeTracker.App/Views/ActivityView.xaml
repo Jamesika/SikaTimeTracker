@@ -4,7 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Grid x:Name="ActivityRoot">
         <ScrollViewer>
-            <StackPanel Padding="32,24,32,40" Spacing="20">
+            <StackPanel Padding="28,16,28,28" Spacing="14">
                 <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -59,8 +59,8 @@
                     </Border>
                 </Grid>
 
-                <Border Style="{StaticResource CardStyle}">
-                    <StackPanel Spacing="14">
+                <Border Padding="16" Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="10">
                         <Grid>
                             <TextBlock Style="{StaticResource SectionTitleStyle}" Text="活动热力图" />
                             <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="5">
@@ -80,7 +80,7 @@
                             HorizontalScrollMode="Enabled"
                             SizeChanged="OnHeatmapViewportSizeChanged"
                             VerticalScrollMode="Disabled">
-                            <StackPanel Padding="0,0,12,0" Spacing="6">
+                            <StackPanel Padding="0,0,12,0" Spacing="4">
                                 <Grid x:Name="MonthHeaderGrid" Height="22" HorizontalAlignment="Left" />
                                 <Grid x:Name="HeatmapGrid" HorizontalAlignment="Left" />
                             </StackPanel>
@@ -89,8 +89,8 @@
                     </StackPanel>
                 </Border>
 
-                <Border Style="{StaticResource CardStyle}">
-                    <StackPanel Spacing="16">
+                <Border Padding="16" Style="{StaticResource CardStyle}">
+                    <StackPanel Spacing="10">
                         <Grid>
                             <StackPanel>
                                 <TextBlock x:Name="TimelineTitleText" Style="{StaticResource SectionTitleStyle}" Text="今日时间轴" />
@@ -98,50 +98,51 @@
                             </StackPanel>
                             <Button HorizontalAlignment="Right" Click="OnTodayClicked" Content="返回今天" />
                         </Grid>
-                        <Grid MinHeight="166">
+                        <Grid MinHeight="96">
                             <ScrollViewer
                                 x:Name="TimelineViewport"
                                 HorizontalScrollBarVisibility="Auto"
                                 HorizontalScrollMode="Enabled"
                                 SizeChanged="OnTimelineViewportSizeChanged"
                                 VerticalScrollMode="Disabled">
-                                <Canvas x:Name="TimelineCanvas" Height="136" />
+                                <Canvas x:Name="TimelineCanvas" Height="96" />
                             </ScrollViewer>
                             <StackPanel x:Name="EmptyTimeline" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
                                 <FontIcon Glyph="&#xE823;" FontSize="28" />
                                 <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="这一天没有活动记录" />
                             </StackPanel>
                         </Grid>
-                        <Grid x:Name="ActivityDetailsHeader" Margin="0,8,0,0">
-                            <TextBlock Style="{StaticResource SectionTitleStyle}" Text="活动明细" />
+                        <Grid x:Name="ActivityDetailsHeader" Margin="0,2,0,0">
+                            <TextBlock Style="{StaticResource SectionTitleStyle}" Text="软件使用情况" />
                             <TextBlock
                                 HorizontalAlignment="Right"
                                 VerticalAlignment="Center"
                                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                Text="点击记录可查看详情或修正分类" />
+                                Text="按当天累计时长排序" />
                         </Grid>
                         <ListView
                             x:Name="TimelineList"
                             MaxHeight="440"
-                            IsItemClickEnabled="True"
-                            ItemClick="OnTimelineItemClicked"
                             SelectionMode="None">
                             <ListView.ItemTemplate>
                                 <DataTemplate>
-                                    <Grid Padding="4,10" ColumnSpacing="12">
+                                    <Grid MinHeight="48" Margin="0,2" Background="{ThemeResource SubtleFillColorSecondaryBrush}">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="104" />
-                                            <ColumnDefinition Width="5" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="{Binding FilledWidth}" />
+                                            <ColumnDefinition Width="{Binding RemainingWidth}" />
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding TimeText}" />
-                                        <Border Grid.Column="1" Background="{Binding CategoryBrush}" CornerRadius="3" />
-                                        <StackPanel Grid.Column="2" Spacing="2">
-                                            <TextBlock FontWeight="SemiBold" Text="{Binding ApplicationName}" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding Subtitle}" TextTrimming="CharacterEllipsis" />
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding DurationText}" />
+                                        <Border Background="{Binding CategoryBrush}" Opacity="0.3" />
+                                        <Grid Grid.ColumnSpan="2" Padding="12,5" ColumnSpacing="14">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="2">
+                                                <TextBlock FontWeight="SemiBold" Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding Subtitle}" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding DurationText}" />
+                                        </Grid>
                                     </Grid>
                                 </DataTemplate>
                             </ListView.ItemTemplate>

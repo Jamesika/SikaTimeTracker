@@ -14,12 +14,14 @@ public sealed class WindowsForegroundWindowSource : IForegroundWindowSource
     private const uint WineventOutofcontext = 0x0000;
 
     private readonly WinEventDelegate _callback;
+    private readonly IWebsiteDomainResolver? _websiteDomainResolver;
     private nint _hook;
     private bool _disposed;
 
-    public WindowsForegroundWindowSource()
+    public WindowsForegroundWindowSource(IWebsiteDomainResolver? websiteDomainResolver = null)
     {
         _callback = OnWinEvent;
+        _websiteDomainResolver = websiteDomainResolver;
     }
 
     public event EventHandler<WindowChangedEventArgs>? ForegroundWindowChanged;
@@ -125,7 +127,13 @@ public sealed class WindowsForegroundWindowSource : IForegroundWindowSource
         var titleLength = GetWindowTextLength(windowHandle);
         var titleBuilder = new StringBuilder(Math.Max(titleLength + 1, 1));
         _ = GetWindowText(windowHandle, titleBuilder, titleBuilder.Capacity);
-        return new WindowSnapshot(windowHandle, processName, titleBuilder.ToString(), observedAtUtc);
+        var websiteDomain = _websiteDomainResolver?.Resolve(windowHandle, processName) ?? string.Empty;
+        return new WindowSnapshot(
+            windowHandle,
+            processName,
+            titleBuilder.ToString(),
+            observedAtUtc,
+            websiteDomain);
     }
 
     private delegate void WinEventDelegate(

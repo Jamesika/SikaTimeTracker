@@ -52,7 +52,8 @@ public sealed class SqliteActivityStoreTests
             start,
             "Code",
             "SikaTimeTracker - Visual Studio Code",
-            CategoryId: 2));
+            CategoryId: 2,
+            WebsiteDomain: "docs.example.com"));
 
         Assert.IsTrue(await _store.UpdateHeartbeatAsync(activityId, start.AddMinutes(5)));
         Assert.IsTrue(await _store.StopActivityAsync(activityId, start.AddMinutes(10)));
@@ -61,6 +62,7 @@ public sealed class SqliteActivityStoreTests
         Assert.HasCount(1, activities);
         Assert.AreEqual(TimeSpan.FromMinutes(10), activities[0].Duration);
         Assert.AreEqual(start.AddMinutes(10), activities[0].EndTimeUtc);
+        Assert.AreEqual("docs.example.com", activities[0].WebsiteDomain);
     }
 
     [TestMethod]
@@ -198,6 +200,32 @@ public sealed class SqliteActivityStoreTests
         Assert.AreEqual(
             2,
             new ClassificationEngine().Classify("code", "Future", rules, defaultCategoryId: 1).CategoryId);
+    }
+
+    [TestMethod]
+    public async Task WebsiteClassification_UpdatesOnlyMatchingDomain()
+    {
+        var start = new DateTimeOffset(2026, 8, 25, 8, 0, 0, TimeSpan.Zero);
+        foreach (var draft in new[]
+                 {
+                     new ActivityDraft(start, "msedge", "Repository", 1, WebsiteDomain: "github.com"),
+                     new ActivityDraft(start.AddMinutes(2), "chrome", "Repository", 1, WebsiteDomain: "github.com"),
+                     new ActivityDraft(start.AddMinutes(4), "msedge", "Video", 1, WebsiteDomain: "youtube.com")
+                 })
+        {
+            var id = await _store.StartActivityAsync(draft);
+            await _store.StopActivityAsync(id, draft.StartTimeUtc.AddMinutes(1));
+        }
+
+        var service = new ProgramClassificationService(_store);
+        var changed = await service.AssignWebsiteDomainCategoryAsync("github.com", categoryId: 2);
+        var activities = await _store.GetAllActivitiesAsync();
+
+        Assert.AreEqual(2, changed);
+        Assert.IsTrue(activities
+            .Where(activity => activity.WebsiteDomain == "github.com")
+            .All(activity => activity.CategoryId == 2 && activity.IsManuallyClassified));
+        Assert.AreEqual(1, activities.Single(activity => activity.WebsiteDomain == "youtube.com").CategoryId);
     }
 
     [TestMethod]

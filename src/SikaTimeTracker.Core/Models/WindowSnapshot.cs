@@ -4,12 +4,14 @@ public sealed record WindowSnapshot(
     nint WindowHandle,
     string ProcessName,
     string WindowTitle,
-    DateTimeOffset ObservedAtUtc)
+    DateTimeOffset ObservedAtUtc,
+    string WebsiteDomain = "")
 {
     public bool RepresentsSameActivity(WindowSnapshot other)
     {
         return WindowHandle == other.WindowHandle
                && string.Equals(ProcessName, other.ProcessName, StringComparison.Ordinal)
-               && string.Equals(WindowTitle, other.WindowTitle, StringComparison.Ordinal);
+               && string.Equals(WindowTitle, other.WindowTitle, StringComparison.Ordinal)
+               && string.Equals(WebsiteDomain, other.WebsiteDomain, StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -97,11 +97,16 @@ public sealed partial class MainWindow : Window
         if (status.IsTracking && status.CurrentWindow is not null)
         {
             TrackedProcessText.Text = status.CurrentWindow.ProcessName;
-            TrackedWindowText.Text = status.CurrentWindow.WindowTitle;
-            TrackedWindowText.Visibility = string.IsNullOrWhiteSpace(status.CurrentWindow.WindowTitle)
+            var trackedContext = string.IsNullOrWhiteSpace(status.CurrentWindow.WebsiteDomain)
+                ? status.CurrentWindow.WindowTitle
+                : string.IsNullOrWhiteSpace(status.CurrentWindow.WindowTitle)
+                    ? status.CurrentWindow.WebsiteDomain
+                    : $"{status.CurrentWindow.WebsiteDomain} · {status.CurrentWindow.WindowTitle}";
+            TrackedWindowText.Text = trackedContext;
+            TrackedWindowText.Visibility = string.IsNullOrWhiteSpace(trackedContext)
                                            || string.Equals(
                                                status.CurrentWindow.ProcessName,
-                                               status.CurrentWindow.WindowTitle,
+                                               trackedContext,
                                                StringComparison.OrdinalIgnoreCase)
                 ? Visibility.Collapsed
                 : Visibility.Visible;

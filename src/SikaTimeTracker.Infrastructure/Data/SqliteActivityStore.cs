@@ -7,7 +7,7 @@ namespace SikaTimeTracker.Infrastructure.Data;
 
 public sealed class SqliteActivityStore : IActivityStore
 {
-    private const int CurrentSchemaVersion = 1;
+    private const int CurrentSchemaVersion = 2;
     private readonly string _databasePath;
     private readonly string _connectionString;
 
@@ -33,6 +33,11 @@ public sealed class SqliteActivityStore : IActivityStore
         }
 
         await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var versionCommand = connection.CreateCommand();
+        versionCommand.CommandText = "PRAGMA user_version;";
+        var schemaVersion = Convert.ToInt32(
+            await versionCommand.ExecuteScalarAsync(cancellationToken),
+            CultureInfo.InvariantCulture);
         await using var command = connection.CreateCommand();
         command.CommandText = $$"""
             PRAGMA journal_mode = WAL;
@@ -99,9 +104,24 @@ public sealed class SqliteActivityStore : IActivityStore
             INSERT OR IGNORE INTO Categories(Id, Name, Color, SortOrder, IsDefault)
                 VALUES (3, '游戏', '#C239B3', 20, 0);
 
-            PRAGMA user_version = {{CurrentSchemaVersion}};
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
+
+        if (schemaVersion < CurrentSchemaVersion)
+        {
+            command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('ActivitySegments') WHERE name = 'WebsiteDomain';";
+            var hasWebsiteDomainColumn = Convert.ToInt32(
+                await command.ExecuteScalarAsync(cancellationToken),
+                CultureInfo.InvariantCulture) > 0;
+            if (!hasWebsiteDomainColumn)
+            {
+                command.CommandText = "ALTER TABLE ActivitySegments ADD COLUMN WebsiteDomain TEXT NOT NULL DEFAULT '';";
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            command.CommandText = $"PRAGMA user_version = {CurrentSchemaVersion};";
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
     }
 
     public async Task<IReadOnlyList<Category>> GetCategoriesAsync(CancellationToken cancellationToken = default)
@@ -261,16 +281,17 @@ public sealed class SqliteActivityStore : IActivityStore
         await using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO ActivitySegments(
-                StartTimeUtc, EndTimeUtc, LastHeartbeatUtc, ProcessName, WindowTitle,
+                StartTimeUtc, EndTimeUtc, LastHeartbeatUtc, ProcessName, WindowTitle, WebsiteDomain,
                 CategoryId, ClassificationRuleId, IsManuallyClassified, CreatedAtUtc)
             VALUES (
-                $startTimeUtc, NULL, $startTimeUtc, $processName, $windowTitle,
+                $startTimeUtc, NULL, $startTimeUtc, $processName, $windowTitle, $websiteDomain,
                 $categoryId, $ruleId, $isManual, $createdAtUtc);
             SELECT last_insert_rowid();
             """;
         AddParameter(command, "$startTimeUtc", FormatUtc(activity.StartTimeUtc));
         AddParameter(command, "$processName", activity.ProcessName);
         AddParameter(command, "$windowTitle", activity.WindowTitle);
+        AddParameter(command, "$websiteDomain", activity.WebsiteDomain);
         AddParameter(command, "$categoryId", activity.CategoryId);
         AddParameter(command, "$ruleId", activity.ClassificationRuleId);
         AddParameter(command, "$isManual", activity.IsManuallyClassified);
@@ -329,7 +350,7 @@ public sealed class SqliteActivityStore : IActivityStore
         {
             previousCommand.Transaction = transaction;
             previousCommand.CommandText = """
-                SELECT Id, StartTimeUtc, EndTimeUtc, LastHeartbeatUtc, ProcessName, WindowTitle,
+                SELECT Id, StartTimeUtc, EndTimeUtc, LastHeartbeatUtc, ProcessName, WindowTitle, WebsiteDomain,
                        CategoryId, ClassificationRuleId, IsManuallyClassified
                 FROM ActivitySegments
                 WHERE Id <> $id
@@ -352,6 +373,7 @@ public sealed class SqliteActivityStore : IActivityStore
             || current.StartTimeUtc - previous.EndTimeUtc.Value > maximumGap
             || !string.Equals(current.ProcessName, previous.ProcessName, StringComparison.Ordinal)
             || !string.Equals(current.WindowTitle, previous.WindowTitle, StringComparison.Ordinal)
+            || !string.Equals(current.WebsiteDomain, previous.WebsiteDomain, StringComparison.OrdinalIgnoreCase)
             || current.CategoryId != previous.CategoryId
             || current.ClassificationRuleId != previous.ClassificationRuleId
             || current.IsManuallyClassified != previous.IsManuallyClassified)
@@ -411,7 +433,7 @@ public sealed class SqliteActivityStore : IActivityStore
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, StartTimeUtc, EndTimeUtc, LastHeartbeatUtc, ProcessName, WindowTitle,
+            SELECT Id, StartTimeUtc, EndTimeUtc, LastHeartbeatUtc, ProcessName, WindowTitle, WebsiteDomain,
                    CategoryId, ClassificationRuleId, IsManuallyClassified
             FROM ActivitySegments
             WHERE StartTimeUtc < $rangeEndUtc
@@ -423,16 +445,7 @@ public sealed class SqliteActivityStore : IActivityStore
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            activities.Add(new ActivitySegment(
-                reader.GetInt64(0),
-                ParseUtc(reader.GetString(1)),
-                reader.IsDBNull(2) ? null : ParseUtc(reader.GetString(2)),
-                ParseUtc(reader.GetString(3)),
-                reader.GetString(4),
-                reader.GetString(5),
-                reader.GetInt64(6),
-                reader.IsDBNull(7) ? null : reader.GetInt64(7),
-                reader.GetBoolean(8)));
+            activities.Add(ReadActivity(reader));
         }
 
         return activities;
@@ -444,7 +457,7 @@ public sealed class SqliteActivityStore : IActivityStore
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, StartTimeUtc, EndTimeUtc, LastHeartbeatUtc, ProcessName, WindowTitle,
+            SELECT Id, StartTimeUtc, EndTimeUtc, LastHeartbeatUtc, ProcessName, WindowTitle, WebsiteDomain,
                    CategoryId, ClassificationRuleId, IsManuallyClassified
             FROM ActivitySegments
             ORDER BY StartTimeUtc, Id;
@@ -513,6 +526,30 @@ public sealed class SqliteActivityStore : IActivityStore
         return await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task<int> UpdateActivitiesClassificationByWebsiteDomainAsync(
+        string websiteDomain,
+        long categoryId,
+        long? ruleId,
+        bool isManual,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(websiteDomain);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE ActivitySegments
+            SET CategoryId = $categoryId,
+                ClassificationRuleId = $ruleId,
+                IsManuallyClassified = $isManual
+            WHERE WebsiteDomain = $websiteDomain COLLATE NOCASE;
+            """;
+        AddParameter(command, "$categoryId", categoryId);
+        AddParameter(command, "$ruleId", ruleId);
+        AddParameter(command, "$isManual", isManual);
+        AddParameter(command, "$websiteDomain", websiteDomain);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<string?> GetSettingAsync(string key, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
@@ -572,7 +609,7 @@ public sealed class SqliteActivityStore : IActivityStore
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT Id, StartTimeUtc, EndTimeUtc, LastHeartbeatUtc, ProcessName, WindowTitle,
+            SELECT Id, StartTimeUtc, EndTimeUtc, LastHeartbeatUtc, ProcessName, WindowTitle, WebsiteDomain,
                    CategoryId, ClassificationRuleId, IsManuallyClassified
             FROM ActivitySegments
             WHERE Id = $id;
@@ -602,9 +639,10 @@ public sealed class SqliteActivityStore : IActivityStore
             ParseUtc(reader.GetString(3)),
             reader.GetString(4),
             reader.GetString(5),
-            reader.GetInt64(6),
-            reader.IsDBNull(7) ? null : reader.GetInt64(7),
-            reader.GetBoolean(8));
+            reader.GetInt64(7),
+            reader.IsDBNull(8) ? null : reader.GetInt64(8),
+            reader.GetBoolean(9),
+            reader.GetString(6));
     }
 
     private static void AddParameter(SqliteCommand command, string name, object? value)

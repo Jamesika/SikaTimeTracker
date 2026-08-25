@@ -94,6 +94,23 @@ public sealed class ActivityTrackingServiceTests
     }
 
     [TestMethod]
+    public async Task BrowserDomainChange_StartsANewActivityEvenWhenWindowTitleIsUnchanged()
+    {
+        var start = DateTimeOffset.UtcNow;
+        var fixture = await TrackingFixture.CreateAsync(
+            start,
+            new WindowSnapshot(1, "msedge", "Browser", start, "github.com"));
+        await using var tracker = fixture.Tracker;
+
+        await tracker.ProcessForegroundWindowAsync(
+            new WindowSnapshot(1, "msedge", "Browser", start.AddMinutes(3), "youtube.com"));
+
+        Assert.HasCount(2, fixture.Store.Activities);
+        Assert.AreEqual("github.com", fixture.Store.Activities[0].WebsiteDomain);
+        Assert.AreEqual("youtube.com", fixture.Store.Activities[1].WebsiteDomain);
+    }
+
+    [TestMethod]
     public async Task ForegroundChange_RaisesActivityRecordedAfterSegmentIsFinalized()
     {
         var start = DateTimeOffset.UtcNow;
@@ -274,7 +291,8 @@ public sealed class ActivityTrackingServiceTests
                 activity.WindowTitle,
                 activity.CategoryId,
                 activity.ClassificationRuleId,
-                activity.IsManuallyClassified));
+                activity.IsManuallyClassified,
+                activity.WebsiteDomain));
             return Task.FromResult(id);
         }
 
@@ -356,6 +374,34 @@ public sealed class ActivityTrackingServiceTests
             {
                 var activity = Activities[index];
                 if (!string.Equals(activity.ProcessName, processName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                Activities[index] = activity with
+                {
+                    CategoryId = categoryId,
+                    ClassificationRuleId = ruleId,
+                    IsManuallyClassified = isManual
+                };
+                updated++;
+            }
+
+            return Task.FromResult(updated);
+        }
+
+        public Task<int> UpdateActivitiesClassificationByWebsiteDomainAsync(
+            string websiteDomain,
+            long categoryId,
+            long? ruleId,
+            bool isManual,
+            CancellationToken cancellationToken = default)
+        {
+            var updated = 0;
+            for (var index = 0; index < Activities.Count; index++)
+            {
+                var activity = Activities[index];
+                if (!string.Equals(activity.WebsiteDomain, websiteDomain, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }

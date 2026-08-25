@@ -8,7 +8,7 @@
                 <Grid>
                     <StackPanel Spacing="4">
                         <TextBlock Style="{StaticResource PageTitleStyle}" Text="分类规则" />
-                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="为每个分类维护一组正则表达式，自动匹配进程名称或窗口标题" />
+                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="为每个分类维护一组正则表达式，自动匹配进程名称、窗口标题或网页域名" />
                     </StackPanel>
                     <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
                         <Button Click="OnNewCategoryClicked" Style="{StaticResource AccentButtonStyle}" Content="新建分类" />

@@ -24,7 +24,7 @@ public sealed class ActivityCsvExporter
             $"SikaTimeTracker-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
         var activities = await _store.GetAllActivitiesAsync(cancellationToken);
         await using var writer = new StreamWriter(path, append: false, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-        await writer.WriteLineAsync("Id,StartTimeUtc,EndTimeUtc,DurationSeconds,ProcessName,WindowTitle,CategoryId,IsManuallyClassified");
+        await writer.WriteLineAsync("Id,StartTimeUtc,EndTimeUtc,DurationSeconds,ProcessName,WindowTitle,WebsiteDomain,CategoryId,IsManuallyClassified");
         foreach (var activity in activities)
         {
             var values = new[]
@@ -35,6 +35,7 @@ public sealed class ActivityCsvExporter
                 activity.Duration.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture),
                 activity.ProcessName,
                 activity.WindowTitle,
+                activity.WebsiteDomain,
                 activity.CategoryId.ToString(CultureInfo.InvariantCulture),
                 activity.IsManuallyClassified.ToString(CultureInfo.InvariantCulture)
             };

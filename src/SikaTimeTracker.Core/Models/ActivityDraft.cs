@@ -6,4 +6,5 @@ public sealed record ActivityDraft(
     string WindowTitle,
     long CategoryId,
     long? ClassificationRuleId = null,
-    bool IsManuallyClassified = false);
+    bool IsManuallyClassified = false,
+    string WebsiteDomain = "");

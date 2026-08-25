@@ -56,6 +56,13 @@ public interface IActivityStore
         bool isManual,
         CancellationToken cancellationToken = default);
 
+    Task<int> UpdateActivitiesClassificationByWebsiteDomainAsync(
+        string websiteDomain,
+        long categoryId,
+        long? ruleId,
+        bool isManual,
+        CancellationToken cancellationToken = default);
+
     Task<string?> GetSettingAsync(string key, CancellationToken cancellationToken = default);
 
     Task SetSettingAsync(string key, string value, CancellationToken cancellationToken = default);

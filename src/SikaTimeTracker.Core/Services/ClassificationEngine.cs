@@ -18,7 +18,8 @@ public sealed class ClassificationEngine
         string processName,
         string windowTitle,
         IEnumerable<ClassificationRule> rules,
-        long defaultCategoryId)
+        long defaultCategoryId,
+        string websiteDomain = "")
     {
         foreach (var rule in rules
                      .Where(rule => rule.IsEnabled)
@@ -27,7 +28,7 @@ public sealed class ClassificationEngine
         {
             try
             {
-                if (IsMatch(rule, processName, windowTitle))
+                if (IsMatch(rule, processName, windowTitle, websiteDomain))
                 {
                     return new ClassificationResult(rule.CategoryId, rule.Id);
                 }
@@ -68,14 +69,20 @@ public sealed class ClassificationEngine
         }
     }
 
-    private bool IsMatch(ClassificationRule rule, string processName, string windowTitle)
+    private bool IsMatch(
+        ClassificationRule rule,
+        string processName,
+        string windowTitle,
+        string websiteDomain)
     {
         return rule.Target switch
         {
             RuleTarget.ProcessName => IsTextMatch(rule, processName),
-            RuleTarget.WindowTitle => IsTextMatch(rule, windowTitle),
+            RuleTarget.WindowTitle => IsTextMatch(rule, windowTitle) || IsTextMatch(rule, websiteDomain),
             RuleTarget.ProcessNameOrWindowTitle =>
-                IsTextMatch(rule, processName) || IsTextMatch(rule, windowTitle),
+                IsTextMatch(rule, processName)
+                || IsTextMatch(rule, windowTitle)
+                || IsTextMatch(rule, websiteDomain),
             _ => false
         };
     }

@@ -408,10 +408,59 @@ public sealed partial class ActivityView : UserControl
         EmptyTimeline.Visibility = _timelineItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ActivityDetailsHeader.Visibility = _timelineItems.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         TimelineList.Visibility = _timelineItems.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-        TimelineList.ItemsSource = _timelineItems
-            .OrderByDescending(item => item.Activity.StartLocal)
-            .ToArray();
+        TimelineList.ItemsSource = BuildSoftwareUsageItems(_timelineItems);
         RenderTimelineCanvas();
+    }
+
+    private static IReadOnlyList<SoftwareUsageItem> BuildSoftwareUsageItems(
+        IReadOnlyList<TimelineDisplayItem> timelineItems)
+    {
+        var groups = timelineItems
+            .GroupBy(
+                item => string.IsNullOrWhiteSpace(item.Activity.WebsiteDomain)
+                    ? $"app:{item.Activity.ProcessName}"
+                    : $"web:{item.Activity.WebsiteDomain}",
+                StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var items = group.ToArray();
+                var duration = TimeSpan.FromTicks(items.Sum(item => item.Activity.Duration.Ticks));
+                var dominantCategory = items
+                    .GroupBy(item => item.CategoryName, StringComparer.OrdinalIgnoreCase)
+                    .OrderByDescending(category => category.Sum(item => item.Activity.Duration.Ticks))
+                    .First();
+                var representative = dominantCategory.First();
+                var domain = items
+                    .Select(item => item.Activity.WebsiteDomain)
+                    .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+                var applications = string.Join(
+                    " / ",
+                    items.Select(item => item.ApplicationName).Distinct(StringComparer.OrdinalIgnoreCase));
+                return new
+                {
+                    DisplayName = domain ?? representative.ApplicationName,
+                    Subtitle = domain is null
+                        ? $"{representative.CategoryName} · {items.Length} 段活动"
+                        : $"{applications} · {representative.CategoryName} · {items.Length} 段活动",
+                    Duration = duration,
+                    representative.CategoryBrush
+                };
+            })
+            .OrderByDescending(item => item.Duration)
+            .ThenBy(item => item.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var maximumTicks = Math.Max(1, groups.FirstOrDefault()?.Duration.Ticks ?? 1);
+        return groups.Select(item =>
+        {
+            var percentage = Math.Clamp(item.Duration.Ticks * 100d / maximumTicks, 2, 100);
+            return new SoftwareUsageItem(
+                item.DisplayName,
+                item.Subtitle,
+                FormatDuration(item.Duration),
+                item.CategoryBrush,
+                new GridLength(percentage, GridUnitType.Star),
+                new GridLength(100 - percentage, GridUnitType.Star));
+        }).ToArray();
     }
 
     private void RenderTimelineCanvas()
@@ -651,23 +700,22 @@ public sealed partial class ActivityView : UserControl
         _ = ShowTimelineDetailsAsync(item);
     }
 
-    private void OnTimelineItemClicked(object sender, ItemClickEventArgs args)
-    {
-        if (args.ClickedItem is TimelineDisplayItem item)
-        {
-            _ = ShowTimelineDetailsAsync(item);
-        }
-    }
-
     private async Task ShowTimelineDetailsAsync(TimelineDisplayItem item)
     {
         var details = new StackPanel { Spacing = 10, MaxWidth = 520 };
         details.Children.Add(new TextBlock { Text = item.TimeText + " · " + item.DurationText });
         details.Children.Add(new TextBlock { Text = item.Activity.ProcessName, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        if (!string.IsNullOrWhiteSpace(item.Activity.WebsiteDomain))
+        {
+            details.Children.Add(new TextBlock { Text = item.Activity.WebsiteDomain });
+        }
         details.Children.Add(new TextBlock { Text = item.Activity.WindowTitle, TextWrapping = TextWrapping.Wrap });
+        var isWebsite = !string.IsNullOrWhiteSpace(item.Activity.WebsiteDomain);
         details.Children.Add(new TextBlock
         {
-            Text = "修改后会更新这个程序的全部历史记录，并为后续活动建立自动分类规则。",
+            Text = isWebsite
+                ? "修改后会更新这个网站域名的全部历史记录，并为后续访问建立自动分类规则。"
+                : "修改后会更新这个程序的全部历史记录，并为后续活动建立自动分类规则。",
             Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray),
             TextWrapping = TextWrapping.Wrap
         });
@@ -685,16 +733,21 @@ public sealed partial class ActivityView : UserControl
             XamlRoot = XamlRoot,
             Title = "活动详情",
             Content = details,
-            PrimaryButtonText = "应用到该程序全部记录",
+            PrimaryButtonText = isWebsite ? "应用到该网站全部记录" : "应用到该程序全部记录",
             CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Primary
         };
         if (await dialog.ShowAsync() == ContentDialogResult.Primary
             && categoryBox.SelectedItem is Category category)
         {
-            var changed = await new ProgramClassificationService(_store).AssignCategoryAsync(
-                item.Activity.ProcessName,
-                category.Id);
+            var classificationService = new ProgramClassificationService(_store);
+            var changed = isWebsite
+                ? await classificationService.AssignWebsiteDomainCategoryAsync(
+                    item.Activity.WebsiteDomain,
+                    category.Id)
+                : await classificationService.AssignCategoryAsync(
+                    item.Activity.ProcessName,
+                    category.Id);
             await _trackingService.ReloadRulesAsync();
             await RefreshAsync();
             TimelineSummaryText.Text += $" · 已更新该程序 {changed} 条记录";
@@ -762,4 +815,12 @@ public sealed partial class ActivityView : UserControl
         string Subtitle,
         string DurationText,
         Brush CategoryBrush);
+
+    public sealed record SoftwareUsageItem(
+        string DisplayName,
+        string Subtitle,
+        string DurationText,
+        Brush CategoryBrush,
+        GridLength FilledWidth,
+        GridLength RemainingWidth);
 }

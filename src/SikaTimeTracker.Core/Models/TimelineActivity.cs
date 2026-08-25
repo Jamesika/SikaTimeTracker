@@ -8,4 +8,5 @@ public sealed record TimelineActivity(
     string ProcessName,
     string WindowTitle,
     long CategoryId,
-    bool IsManuallyClassified);
+    bool IsManuallyClassified,
+    string WebsiteDomain = "");

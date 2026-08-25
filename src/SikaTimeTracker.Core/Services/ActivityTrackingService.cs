@@ -350,13 +350,15 @@ public sealed class ActivityTrackingService : IAsyncDisposable
             snapshot.ProcessName,
             snapshot.WindowTitle,
             _rules,
-            _defaultCategoryId);
+            _defaultCategoryId,
+            snapshot.WebsiteDomain);
         _currentActivityId = await _store.StartActivityAsync(new ActivityDraft(
             startUtc,
             snapshot.ProcessName,
             snapshot.WindowTitle,
             classification.CategoryId,
-            classification.RuleId), cancellationToken);
+            classification.RuleId,
+            WebsiteDomain: snapshot.WebsiteDomain), cancellationToken);
         _currentWindow = snapshot;
         _currentStartUtc = startUtc;
         _lastHeartbeatUtc = startUtc;

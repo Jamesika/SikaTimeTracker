@@ -9,7 +9,8 @@ public sealed record ActivitySegment(
     string WindowTitle,
     long CategoryId,
     long? ClassificationRuleId,
-    bool IsManuallyClassified)
+    bool IsManuallyClassified,
+    string WebsiteDomain = "")
 {
     public DateTimeOffset EffectiveEndTimeUtc => EndTimeUtc ?? LastHeartbeatUtc;
 

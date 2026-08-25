@@ -66,7 +66,7 @@ public partial class App : Application
         var preferences = await settingsService.LoadAsync();
         var startupService = new WindowsStartupService(
             Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "SikaTimeTracker.exe"));
-        var windowSource = new WindowsForegroundWindowSource
+        var windowSource = new WindowsForegroundWindowSource(new BrowserWebsiteDomainResolver())
         {
             CaptureWindowTitles = preferences.RecordWindowTitles
         };
