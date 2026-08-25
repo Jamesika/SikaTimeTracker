@@ -93,6 +93,7 @@ public partial class App : Application
         _mainWindow = mainWindow;
         _window = mainWindow;
         mainWindow.Activate();
+        mainWindow.Maximize();
         _trayIconService = new TrayIconService(mainWindow);
         _taskbarStatusWindow = new TaskbarStatusWindow(
             _activityStore,

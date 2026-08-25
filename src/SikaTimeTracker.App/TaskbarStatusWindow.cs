@@ -20,6 +20,8 @@ public sealed class TaskbarStatusWindow : IDisposable
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly DispatcherTimer _positionTimer;
     private readonly DispatcherTimer _summaryTimer;
+    private readonly DispatcherQueueTimer _environmentSettleTimer;
+    private readonly IDisposable _environmentMonitor;
     private readonly TaskbarBadgeForm _form;
     private readonly Forms.ToolTip _toolTip = new();
     private readonly nint _windowHandle;
@@ -30,6 +32,7 @@ public sealed class TaskbarStatusWindow : IDisposable
     private bool _isVisible;
     private bool _disposed;
     private bool _wasMainWindowForegroundOnMouseDown;
+    private int _positionUpdateQueued;
 
     public TaskbarStatusWindow(
         IActivityStore store,
@@ -55,8 +58,13 @@ public sealed class TaskbarStatusWindow : IDisposable
         ApplyTheme(theme);
         _windowHandle = _form.Handle;
         TaskbarNativeService.ConfigureToolWindow(_windowHandle);
+        _environmentMonitor = TaskbarNativeService.WatchEnvironment(OnTaskbarEnvironmentChanged);
+        _environmentSettleTimer = _dispatcherQueue.CreateTimer();
+        _environmentSettleTimer.Interval = TimeSpan.FromMilliseconds(120);
+        _environmentSettleTimer.IsRepeating = false;
+        _environmentSettleTimer.Tick += OnEnvironmentSettleTimerTick;
 
-        _positionTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _positionTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(10) };
         _positionTimer.Tick += OnPositionTimerTick;
         _summaryTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
         _summaryTimer.Tick += OnSummaryTimerTick;
@@ -89,9 +97,12 @@ public sealed class TaskbarStatusWindow : IDisposable
         _disposed = true;
         _positionTimer.Stop();
         _summaryTimer.Stop();
+        _environmentSettleTimer.Stop();
         _positionTimer.Tick -= OnPositionTimerTick;
         _summaryTimer.Tick -= OnSummaryTimerTick;
+        _environmentSettleTimer.Tick -= OnEnvironmentSettleTimerTick;
         _trackingService.ActivityRecorded -= OnActivityRecorded;
+        _environmentMonitor.Dispose();
         _form.MouseDown -= OnBadgeMouseDown;
         _form.Click -= OnBadgeClicked;
         TaskbarNativeService.Hide(_windowHandle);
@@ -103,6 +114,36 @@ public sealed class TaskbarStatusWindow : IDisposable
     private void OnPositionTimerTick(object? sender, object args)
     {
         UpdatePosition();
+    }
+
+    private void OnTaskbarEnvironmentChanged()
+    {
+        if (_disposed || Interlocked.Exchange(ref _positionUpdateQueued, 1) != 0)
+        {
+            return;
+        }
+
+        if (!_dispatcherQueue.TryEnqueue(() =>
+            {
+                Interlocked.Exchange(ref _positionUpdateQueued, 0);
+                if (!_disposed)
+                {
+                    UpdatePosition();
+                    _environmentSettleTimer.Stop();
+                    _environmentSettleTimer.Start();
+                }
+            }))
+        {
+            Interlocked.Exchange(ref _positionUpdateQueued, 0);
+        }
+    }
+
+    private void OnEnvironmentSettleTimerTick(DispatcherQueueTimer sender, object args)
+    {
+        if (!_disposed)
+        {
+            UpdatePosition();
+        }
     }
 
     private async void OnSummaryTimerTick(object? sender, object args)

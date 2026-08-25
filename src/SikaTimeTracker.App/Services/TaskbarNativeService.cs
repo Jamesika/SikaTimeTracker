@@ -19,6 +19,15 @@ internal static class TaskbarNativeService
     private const int DwmWindowBorderColor = 34;
     private const int DwmWindowCornerRoundSmall = 3;
     private const int DwmColorNone = unchecked((int)0xFFFFFFFE);
+    private const uint EventSystemForeground = 0x0003;
+    private const uint EventSystemMinimizeStart = 0x0016;
+    private const uint EventSystemMinimizeEnd = 0x0017;
+    private const uint EventSystemDesktopSwitch = 0x0020;
+    private const uint EventObjectCreate = 0x8000;
+    private const uint EventObjectHide = 0x8003;
+    private const uint EventObjectLocationChange = 0x800B;
+    private const int ObjectIdWindow = 0;
+    private const uint WinEventOutOfContext = 0x0000;
     private static readonly nint TopmostWindow = new(-1);
 
     public static bool TryGetTaskbarState(out TaskbarState state)
@@ -131,6 +140,11 @@ internal static class TaskbarNativeService
         _ = ShowWindow(windowHandle, ShowWindowHide);
     }
 
+    public static IDisposable WatchEnvironment(Action changed)
+    {
+        return new TaskbarEnvironmentMonitor(changed);
+    }
+
     private static bool IsAutoHideTaskbarRetracted(
         TaskbarEdge edge,
         PixelBounds actualBounds,
@@ -177,6 +191,120 @@ internal static class TaskbarNativeService
 
         public readonly PixelBounds ToPixelBounds() => new(Left, Top, Right, Bottom);
     }
+
+    private sealed class TaskbarEnvironmentMonitor : IDisposable
+    {
+        private readonly Action _changed;
+        private readonly WinEventCallback _callback;
+        private readonly nint[] _hooks;
+        private bool _disposed;
+
+        public TaskbarEnvironmentMonitor(Action changed)
+        {
+            _changed = changed;
+            _callback = OnWinEvent;
+            _hooks =
+            [
+                SetWinEventHook(
+                    EventSystemForeground,
+                    EventSystemForeground,
+                    nint.Zero,
+                    _callback,
+                    0,
+                    0,
+                    WinEventOutOfContext),
+                SetWinEventHook(
+                    EventSystemMinimizeStart,
+                    EventSystemMinimizeEnd,
+                    nint.Zero,
+                    _callback,
+                    0,
+                    0,
+                    WinEventOutOfContext),
+                SetWinEventHook(
+                    EventSystemDesktopSwitch,
+                    EventSystemDesktopSwitch,
+                    nint.Zero,
+                    _callback,
+                    0,
+                    0,
+                    WinEventOutOfContext),
+                SetWinEventHook(
+                    EventObjectCreate,
+                    EventObjectHide,
+                    nint.Zero,
+                    _callback,
+                    0,
+                    0,
+                    WinEventOutOfContext),
+                SetWinEventHook(
+                    EventObjectLocationChange,
+                    EventObjectLocationChange,
+                    nint.Zero,
+                    _callback,
+                    0,
+                    0,
+                    WinEventOutOfContext)
+            ];
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            foreach (var hook in _hooks)
+            {
+                if (hook != nint.Zero)
+                {
+                    _ = UnhookWinEvent(hook);
+                }
+            }
+        }
+
+        private void OnWinEvent(
+            nint hook,
+            uint eventType,
+            nint windowHandle,
+            int objectId,
+            int childId,
+            uint eventThread,
+            uint eventTime)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            if (eventType == EventObjectLocationChange
+                && (objectId != ObjectIdWindow
+                    || (windowHandle != GetForegroundWindow()
+                        && windowHandle != FindWindow("Shell_TrayWnd", null))))
+            {
+                return;
+            }
+
+            if (eventType is >= EventObjectCreate and <= EventObjectHide
+                && objectId != ObjectIdWindow)
+            {
+                return;
+            }
+
+            _changed();
+        }
+    }
+
+    private delegate void WinEventCallback(
+        nint hook,
+        uint eventType,
+        nint windowHandle,
+        int objectId,
+        int childId,
+        uint eventThread,
+        uint eventTime);
 
     [DllImport("shell32.dll")]
     private static extern nuint SHAppBarMessage(uint message, ref AppBarData data);
@@ -229,6 +357,20 @@ internal static class TaskbarNativeService
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool ShowWindow(nint windowHandle, int command);
+
+    [DllImport("user32.dll")]
+    private static extern nint SetWinEventHook(
+        uint eventMinimum,
+        uint eventMaximum,
+        nint eventHookModule,
+        WinEventCallback callback,
+        uint processId,
+        uint threadId,
+        uint flags);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UnhookWinEvent(nint eventHook);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(

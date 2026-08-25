@@ -193,6 +193,14 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    public void Maximize()
+    {
+        if (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter)
+        {
+            presenter.Maximize();
+        }
+    }
+
     public bool IsForeground()
     {
         var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
