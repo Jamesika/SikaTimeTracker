@@ -46,18 +46,22 @@ public sealed partial class RulesView : UserControl
             _rules = await _store.GetRulesAsync();
             CategoryRuleList.ItemsSource = _categories.Select(category =>
             {
-                var patterns = _rules
-                    .Where(rule => rule.CategoryId == category.Id && rule.IsEnabled)
-                    .OrderByDescending(rule => rule.Priority)
-                    .ThenBy(rule => rule.Id)
-                    .Select(NormalizePattern)
-                    .ToArray();
-                var defaultText = category.IsDefault ? " · 默认分类" : string.Empty;
+                var patterns = category.IsDefault
+                    ? []
+                    : _rules
+                        .Where(rule => rule.CategoryId == category.Id && rule.IsEnabled)
+                        .OrderByDescending(rule => rule.Priority)
+                        .ThenBy(rule => rule.Id)
+                        .Select(NormalizePattern)
+                        .ToArray();
+                var description = category.IsDefault
+                    ? "默认分类 · 自动接收未命中其他规则的活动"
+                    : $"{patterns.Length} 条正则 · 排序 {category.SortOrder}";
                 return new CategoryRulesDisplayItem(
                     category,
                     new SolidColorBrush(ParseColor(category.Color)),
                     patterns,
-                    $"{patterns.Length} 条正则 · 排序 {category.SortOrder}{defaultText}");
+                    description);
             }).ToArray();
         }
         finally
@@ -108,7 +112,6 @@ public sealed partial class RulesView : UserControl
         var patternBox = new TextBox
         {
             Header = $"{item.Category.Name}的正则列表（每行一个）",
-            Text = string.Join(Environment.NewLine, item.Patterns),
             PlaceholderText = "unity\nrider\ncode\nvisual studio",
             AcceptsReturn = true,
             TextWrapping = TextWrapping.NoWrap,
@@ -116,6 +119,7 @@ public sealed partial class RulesView : UserControl
             MinWidth = 460,
             Height = 260
         };
+        patternBox.Text = string.Join(Environment.NewLine, item.Patterns);
         var helpText = new TextBlock
         {
             Text = "正则会同时匹配进程名称和窗口标题，忽略大小写；列表顺序越靠前越优先。",
@@ -374,6 +378,10 @@ public sealed partial class RulesView : UserControl
 
         public bool CanDelete => !Category.IsDefault;
 
-        public string EmptyText => Patterns.Count == 0 ? "尚未设置正则；未匹配其他规则的活动会进入默认分类。" : string.Empty;
+        public Visibility EditVisibility => Category.IsDefault ? Visibility.Collapsed : Visibility.Visible;
+
+        public Visibility RulesVisibility => EditVisibility;
+
+        public string EmptyText => Patterns.Count == 0 ? "尚未设置正则。" : string.Empty;
     }
 }

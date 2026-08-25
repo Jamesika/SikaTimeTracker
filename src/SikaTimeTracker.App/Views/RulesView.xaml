@@ -44,27 +44,29 @@
                                             <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding Description}" />
                                         </StackPanel>
                                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
-                                            <Button Click="OnEditCategoryRulesClicked" Content="编辑正则列表" Tag="{Binding}" />
-                                            <Button Click="OnEditCategoryClicked" Tag="{Binding}" ToolTipService.ToolTip="编辑分类">
+                                            <Button Click="OnEditCategoryRulesClicked" Content="编辑正则列表" Tag="{Binding}" Visibility="{Binding EditVisibility}" />
+                                            <Button Click="OnEditCategoryClicked" Tag="{Binding}" ToolTipService.ToolTip="编辑分类" Visibility="{Binding EditVisibility}">
                                                 <FontIcon Glyph="&#xE70F;" />
                                             </Button>
-                                            <Button Click="OnDeleteCategoryClicked" IsEnabled="{Binding CanDelete}" Tag="{Binding}" ToolTipService.ToolTip="删除分类">
+                                            <Button Click="OnDeleteCategoryClicked" Tag="{Binding}" ToolTipService.ToolTip="删除分类" Visibility="{Binding EditVisibility}">
                                                 <FontIcon Glyph="&#xE74D;" />
                                             </Button>
                                         </StackPanel>
                                     </Grid>
-                                    <Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
-                                    <TextBlock FontWeight="SemiBold" Text="正则列表" />
-                                    <ItemsControl ItemsSource="{Binding Patterns}">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Border Margin="0,0,0,6" Padding="10,7" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="5">
-                                                    <TextBlock FontFamily="Cascadia Mono" Text="{Binding}" TextWrapping="Wrap" />
-                                                </Border>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding EmptyText}" />
+                                    <StackPanel Spacing="10" Visibility="{Binding RulesVisibility}">
+                                        <Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                                        <TextBlock FontWeight="SemiBold" Text="正则列表" />
+                                        <ItemsControl ItemsSource="{Binding Patterns}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Margin="0,0,0,6" Padding="10,7" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="5">
+                                                        <TextBlock FontFamily="Cascadia Mono" Text="{Binding}" TextWrapping="Wrap" />
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding EmptyText}" />
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
                         </DataTemplate>

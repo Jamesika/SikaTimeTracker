@@ -79,7 +79,7 @@
                             HorizontalScrollMode="Enabled"
                             SizeChanged="OnHeatmapViewportSizeChanged"
                             VerticalScrollMode="Disabled">
-                            <StackPanel Spacing="6">
+                            <StackPanel Padding="0,0,12,0" Spacing="6">
                                 <Grid x:Name="MonthHeaderGrid" Height="22" HorizontalAlignment="Left" />
                                 <Grid x:Name="HeatmapGrid" HorizontalAlignment="Left" />
                             </StackPanel>

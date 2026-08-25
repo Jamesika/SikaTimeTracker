@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
@@ -193,7 +194,7 @@ public sealed partial class ActivityView : UserControl
         var firstOffset = ((int)firstDate.DayOfWeek + 6) % 7;
         var gridStart = firstDate.AddDays(-firstOffset);
         var weekCount = ((lastDate.DayNumber - gridStart.DayNumber) / 7) + 1;
-        var viewportWidth = Math.Max(0, HeatmapScrollViewer.ActualWidth - 2);
+        var viewportWidth = Math.Max(0, HeatmapScrollViewer.ActualWidth - 14);
         var minimumWidth = weekCount * MinimumHeatmapCellSize + (weekCount - 1) * HeatmapCellSpacing;
         var cellSize = viewportWidth > minimumWidth
             ? (viewportWidth - (weekCount - 1) * HeatmapCellSpacing) / weekCount
@@ -239,7 +240,9 @@ public sealed partial class ActivityView : UserControl
                 button.BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.White);
             }
 
-            ToolTipService.SetToolTip(button, $"{date:yyyy-MM-dd} · {FormatDuration(duration)}");
+            var dayDescription = $"{date:yyyy-MM-dd} · {FormatDuration(duration)}";
+            ToolTipService.SetToolTip(button, dayDescription);
+            AutomationProperties.SetName(button, dayDescription);
             button.Click += OnHeatmapDayClicked;
             Grid.SetColumn(button, week);
             Grid.SetRow(button, day);
