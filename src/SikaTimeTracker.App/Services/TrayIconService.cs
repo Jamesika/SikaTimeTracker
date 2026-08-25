@@ -10,6 +10,7 @@ public sealed class TrayIconService : IDisposable
     private readonly ActivityTrackingService _trackingService;
     private readonly Forms.NotifyIcon _notifyIcon;
     private readonly Forms.ToolStripMenuItem _pauseItem;
+    private readonly System.Drawing.Icon _appIcon;
     private bool _disposed;
 
     public TrayIconService(MainWindow window, ActivityTrackingService trackingService)
@@ -25,10 +26,12 @@ public sealed class TrayIconService : IDisposable
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add(exitItem);
 
+        _appIcon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? string.Empty)
+            ?? (System.Drawing.Icon)System.Drawing.SystemIcons.Application.Clone();
         _notifyIcon = new Forms.NotifyIcon
         {
             Text = "Sika Time Tracker",
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = _appIcon,
             ContextMenuStrip = menu,
             Visible = true
         };
@@ -54,6 +57,7 @@ public sealed class TrayIconService : IDisposable
         _trackingService.StatusChanged -= OnStatusChanged;
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
+        _appIcon.Dispose();
         _disposed = true;
     }
 
