@@ -249,6 +249,7 @@ internal sealed class TaskbarBadgeForm : Forms.Form
         ShowInTaskbar = false;
         StartPosition = Forms.FormStartPosition.Manual;
         TopMost = true;
+        BackColor = DarkBackground;
         SetStyle(
             Forms.ControlStyles.AllPaintingInWmPaint
             | Forms.ControlStyles.OptimizedDoubleBuffer
@@ -283,6 +284,7 @@ internal sealed class TaskbarBadgeForm : Forms.Form
         set
         {
             _useLightPalette = value;
+            BackColor = BackgroundColor;
             Invalidate();
         }
     }
@@ -310,21 +312,13 @@ internal sealed class TaskbarBadgeForm : Forms.Form
     protected override void OnPaint(Forms.PaintEventArgs eventArgs)
     {
         base.OnPaint(eventArgs);
-        eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-        var background = _useLightPalette
-            ? Color.FromArgb(242, 242, 242)
-            : Color.FromArgb(55, 55, 55);
         var secondaryText = _useLightPalette
             ? Color.FromArgb(92, 92, 92)
             : Color.FromArgb(210, 210, 210);
         var primaryText = _useLightPalette
             ? Color.FromArgb(24, 24, 24)
             : Color.White;
-        using (var path = CreateRoundedPath(ClientRectangle, Math.Max(8, Height / 3)))
-        using (var brush = new SolidBrush(background))
-        {
-            eventArgs.Graphics.FillPath(brush, path);
-        }
+        eventArgs.Graphics.Clear(BackgroundColor);
 
         using var labelFont = new Font("Segoe UI", 8.25f, FontStyle.Regular, GraphicsUnit.Point);
         using var durationFont = new Font("Segoe UI", 9.75f, FontStyle.Bold, GraphicsUnit.Point);
@@ -397,4 +391,10 @@ internal sealed class TaskbarBadgeForm : Forms.Form
         path.CloseFigure();
         return path;
     }
+
+    private static readonly Color DarkBackground = Color.FromArgb(55, 55, 55);
+
+    private static readonly Color LightBackground = Color.FromArgb(242, 242, 242);
+
+    private Color BackgroundColor => _useLightPalette ? LightBackground : DarkBackground;
 }
