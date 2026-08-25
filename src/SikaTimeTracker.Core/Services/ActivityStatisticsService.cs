@@ -60,6 +60,42 @@ public sealed class ActivityStatisticsService
             .ToArray();
     }
 
+    public IReadOnlyDictionary<long, int> AssignTimelineLanes(
+        IEnumerable<TimelineActivity> activities)
+    {
+        ArgumentNullException.ThrowIfNull(activities);
+        var laneEndTimes = new List<DateTimeOffset>();
+        var assignments = new Dictionary<long, int>();
+        foreach (var activity in activities
+                     .OrderBy(item => item.StartLocal)
+                     .ThenBy(item => item.EndLocal))
+        {
+            var lane = -1;
+            for (var index = 0; index < laneEndTimes.Count; index++)
+            {
+                if (laneEndTimes[index] <= activity.StartLocal)
+                {
+                    lane = index;
+                    break;
+                }
+            }
+
+            if (lane < 0)
+            {
+                lane = laneEndTimes.Count;
+                laneEndTimes.Add(activity.EndLocal);
+            }
+            else
+            {
+                laneEndTimes[lane] = activity.EndLocal;
+            }
+
+            assignments[activity.ActivityId] = lane;
+        }
+
+        return assignments;
+    }
+
     public static (DateTimeOffset StartUtc, DateTimeOffset EndUtc) GetDayBoundsUtc(
         DateOnly date,
         TimeZoneInfo timeZone)

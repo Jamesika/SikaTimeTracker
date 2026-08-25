@@ -91,6 +91,20 @@ public sealed class ActivityTrackingServiceTests
         Assert.AreEqual(1, recordedCount);
     }
 
+    [TestMethod]
+    [DataRow("explorer.exe")]
+    [DataRow("SikaTimeTracker")]
+    public async Task ExcludedProcess_IsNotRecorded(string processName)
+    {
+        var start = DateTimeOffset.UtcNow;
+        var fixture = await TrackingFixture.CreateAsync(
+            start,
+            new WindowSnapshot(1, processName, "Excluded", start));
+        await using var tracker = fixture.Tracker;
+
+        Assert.HasCount(0, fixture.Store.Activities);
+    }
+
     private sealed class TrackingFixture
     {
         private TrackingFixture(
@@ -109,12 +123,14 @@ public sealed class ActivityTrackingServiceTests
 
         public FakeSystemActivitySource System { get; }
 
-        public static async Task<TrackingFixture> CreateAsync(DateTimeOffset start)
+        public static async Task<TrackingFixture> CreateAsync(
+            DateTimeOffset start,
+            WindowSnapshot? initialWindow = null)
         {
             var store = new FakeActivityStore();
             var window = new FakeForegroundWindowSource
             {
-                Current = new WindowSnapshot(1, "Code", "Editor", start)
+                Current = initialWindow ?? new WindowSnapshot(1, "Code", "Editor", start)
             };
             var system = new FakeSystemActivitySource();
             var tracker = new ActivityTrackingService(

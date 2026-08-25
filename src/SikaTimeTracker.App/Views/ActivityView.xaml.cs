@@ -14,7 +14,7 @@ public sealed partial class ActivityView : UserControl
 {
     private const double MinimumHeatmapCellSize = 13;
     private const double HeatmapCellSpacing = 3;
-    private const double MinimumTimelineWidth = 1152;
+    private const double MinimumTimelinePixelsPerHour = 48;
     private readonly IActivityStore _store;
     private readonly ActivityStatisticsService _statistics = new();
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.Local;
@@ -136,7 +136,9 @@ public sealed partial class ActivityView : UserControl
             var lastDate = new DateOnly(_selectedYear, 12, 31);
             var (rangeStartUtc, _) = ActivityStatisticsService.GetDayBoundsUtc(firstDate, _timeZone);
             var (_, rangeEndUtc) = ActivityStatisticsService.GetDayBoundsUtc(lastDate, _timeZone);
-            _activities = await _store.GetActivitiesAsync(rangeStartUtc, rangeEndUtc);
+            _activities = (await _store.GetActivitiesAsync(rangeStartUtc, rangeEndUtc))
+                .Where(activity => !ProcessExclusionPolicy.ShouldExclude(activity.ProcessName))
+                .ToArray();
             RenderData();
         }
         finally
@@ -293,6 +295,7 @@ public sealed partial class ActivityView : UserControl
                 appName,
                 title,
                 category?.Name ?? "未知分类",
+                $"{title} · {category?.Name ?? "未知分类"}",
                 FormatDuration(activity.Duration),
                 new SolidColorBrush(ParseColor(category?.Color ?? "#8A8886")));
         }).ToArray();
@@ -301,6 +304,9 @@ public sealed partial class ActivityView : UserControl
         TimelineSummaryText.Text = $"共 {_timelineItems.Count} 段活动，累计 {FormatDuration(timeline.Aggregate(TimeSpan.Zero, (sum, item) => sum + item.Duration))}";
         TimelineViewport.Visibility = _timelineItems.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         EmptyTimeline.Visibility = _timelineItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        ActivityDetailsHeader.Visibility = _timelineItems.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        TimelineList.Visibility = _timelineItems.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        TimelineList.ItemsSource = _timelineItems;
         RenderTimelineCanvas();
     }
 
@@ -312,33 +318,63 @@ public sealed partial class ActivityView : UserControl
             return;
         }
 
-        var width = Math.Max(MinimumTimelineWidth, TimelineViewport.ActualWidth - 2);
+        var visibleStartMinutes = Math.Floor(
+            _timelineItems.Min(item => GetMinuteOfDay(item.Activity.StartLocal, isEnd: false)) / 60d) * 60d;
+        var visibleEndMinutes = Math.Ceiling(
+            _timelineItems.Max(item => GetMinuteOfDay(item.Activity.EndLocal, isEnd: true)) / 60d) * 60d;
+        visibleStartMinutes = Math.Clamp(visibleStartMinutes, 0, 1380);
+        visibleEndMinutes = Math.Clamp(visibleEndMinutes, visibleStartMinutes + 60, 1440);
+        var visibleMinutes = visibleEndMinutes - visibleStartMinutes;
+        var width = Math.Max(
+            TimelineViewport.ActualWidth - 2,
+            visibleMinutes / 60d * MinimumTimelinePixelsPerHour);
         TimelineCanvas.Width = width;
         var trackTop = 38d;
-        var trackHeight = 62d;
+        var laneHeight = 44d;
+        var segmentHeight = 36d;
+        var laneAssignments = _statistics.AssignTimelineLanes(_timelineItems.Select(item => item.Activity));
+        var laneCount = laneAssignments.Count == 0 ? 1 : laneAssignments.Values.Max() + 1;
+        var canvasHeight = trackTop + laneCount * laneHeight + 12;
+        TimelineCanvas.Height = canvasHeight;
         var gridBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(48, 128, 128, 128));
         var labelBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(210, 128, 128, 128));
-        var track = new Border
+        for (var lane = 0; lane < laneCount; lane++)
         {
-            Width = width,
-            Height = trackHeight,
-            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(24, 128, 128, 128)),
-            CornerRadius = new CornerRadius(6)
-        };
-        Canvas.SetTop(track, trackTop);
-        TimelineCanvas.Children.Add(track);
+            var track = new Border
+            {
+                Width = width,
+                Height = laneHeight - 4,
+                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(
+                    lane % 2 == 0 ? (byte)24 : (byte)14,
+                    128,
+                    128,
+                    128)),
+                CornerRadius = new CornerRadius(5)
+            };
+            Canvas.SetTop(track, trackTop + lane * laneHeight);
+            TimelineCanvas.Children.Add(track);
+        }
 
-        for (var hour = 0; hour <= 24; hour += 2)
+        var startHour = (int)(visibleStartMinutes / 60d);
+        var endHour = (int)(visibleEndMinutes / 60d);
+        var tickIntervalHours = endHour - startHour <= 8 ? 1 : 2;
+        var tickHours = Enumerable.Range(startHour, endHour - startHour + 1)
+            .Where(hour => hour == startHour
+                           || hour == endHour
+                           || (hour - startHour) % tickIntervalHours == 0)
+            .Distinct()
+            .OrderBy(hour => hour);
+        foreach (var hour in tickHours)
         {
-            var x = width * hour / 24d;
+            var x = width * (hour * 60d - visibleStartMinutes) / visibleMinutes;
             var line = new Line
             {
                 X1 = x,
                 X2 = x,
                 Y1 = 26,
-                Y2 = trackTop + trackHeight + 8,
+                Y2 = canvasHeight - 4,
                 Stroke = gridBrush,
-                StrokeThickness = hour is 0 or 24 ? 1.5 : 1
+                StrokeThickness = hour == startHour || hour == endHour ? 1.5 : 1
             };
             TimelineCanvas.Children.Add(line);
             var label = new TextBlock
@@ -354,16 +390,16 @@ public sealed partial class ActivityView : UserControl
             TimelineCanvas.Children.Add(label);
         }
 
-        foreach (var item in _timelineItems)
+        foreach (var item in _timelineItems.OrderBy(item => item.Activity.StartLocal))
         {
             var startMinutes = GetMinuteOfDay(item.Activity.StartLocal, isEnd: false);
             var endMinutes = GetMinuteOfDay(item.Activity.EndLocal, isEnd: true);
-            var left = width * startMinutes / 1440d;
-            var segmentWidth = Math.Max(2, width * Math.Max(0, endMinutes - startMinutes) / 1440d);
+            var left = width * (startMinutes - visibleStartMinutes) / visibleMinutes;
+            var segmentWidth = Math.Max(6, width * Math.Max(0, endMinutes - startMinutes) / visibleMinutes);
             segmentWidth = Math.Min(segmentWidth, width - left);
             var label = new TextBlock
             {
-                Text = segmentWidth >= 42 ? item.ApplicationName : string.Empty,
+                Text = segmentWidth >= 52 ? item.ApplicationName : string.Empty,
                 FontSize = 12,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
@@ -373,8 +409,8 @@ public sealed partial class ActivityView : UserControl
             var segment = new Border
             {
                 Width = segmentWidth,
-                Height = trackHeight - 8,
-                Padding = segmentWidth >= 42 ? new Thickness(7, 0, 7, 0) : new Thickness(0),
+                Height = segmentHeight,
+                Padding = segmentWidth >= 52 ? new Thickness(7, 0, 7, 0) : new Thickness(0),
                 Background = item.CategoryBrush,
                 BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(60, 0, 0, 0)),
                 BorderThickness = new Thickness(1),
@@ -387,7 +423,7 @@ public sealed partial class ActivityView : UserControl
                 $"{item.ApplicationName}\n{item.Title}\n分类：{item.CategoryName}\n时间：{item.TimeText}\n持续：{item.DurationText}");
             segment.Tapped += OnTimelineSegmentTapped;
             Canvas.SetLeft(segment, left);
-            Canvas.SetTop(segment, trackTop + 4);
+            Canvas.SetTop(segment, trackTop + laneAssignments[item.Activity.ActivityId] * laneHeight + 2);
             TimelineCanvas.Children.Add(segment);
         }
     }
@@ -502,6 +538,14 @@ public sealed partial class ActivityView : UserControl
         _ = ShowTimelineDetailsAsync(item);
     }
 
+    private void OnTimelineItemClicked(object sender, ItemClickEventArgs args)
+    {
+        if (args.ClickedItem is TimelineDisplayItem item)
+        {
+            _ = ShowTimelineDetailsAsync(item);
+        }
+    }
+
     private async Task ShowTimelineDetailsAsync(TimelineDisplayItem item)
     {
         var details = new StackPanel { Spacing = 10, MaxWidth = 520 };
@@ -595,6 +639,7 @@ public sealed partial class ActivityView : UserControl
         string ApplicationName,
         string Title,
         string CategoryName,
+        string Subtitle,
         string DurationText,
         Brush CategoryBrush);
 }

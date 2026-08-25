@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -11,6 +12,9 @@ namespace SikaTimeTracker;
 
 public sealed partial class MainWindow : Window
 {
+    private const uint WindowMessageSetIcon = 0x0080;
+    private const nuint SmallIcon = 0;
+    private const nuint BigIcon = 1;
     private readonly ActivityTrackingService _trackingService;
     private readonly IActivityStore _activityStore;
     private readonly ApplicationSettingsService _settingsService;
@@ -22,6 +26,7 @@ public sealed partial class MainWindow : Window
     private bool _isWindowActive = true;
     private string _currentTag = "activity";
     private FrameworkElement? _currentPage;
+    private System.Drawing.Icon? _windowIcon;
 
     public event EventHandler? Exiting;
 
@@ -41,6 +46,7 @@ public sealed partial class MainWindow : Window
         _dataDirectory = dataDirectory;
         InitializeComponent();
         Title = "Sika Time Tracker";
+        ApplyWindowIcon();
         SystemBackdrop = new MicaBackdrop();
         AppWindow.Resize(new SizeInt32(1180, 760));
         _isChangingSelection = true;
@@ -110,6 +116,8 @@ public sealed partial class MainWindow : Window
         _trackingService.StatusChanged -= OnTrackingStatusChanged;
         _trackingService.ActivityRecorded -= OnActivityRecorded;
         await _trackingService.DisposeAsync();
+        _windowIcon?.Dispose();
+        _windowIcon = null;
         Exiting?.Invoke(this, EventArgs.Empty);
         Application.Current.Exit();
     }
@@ -199,4 +207,25 @@ public sealed partial class MainWindow : Window
             _ => ElementTheme.Default
         };
     }
+
+    private void ApplyWindowIcon()
+    {
+        if (string.IsNullOrWhiteSpace(Environment.ProcessPath))
+        {
+            return;
+        }
+
+        _windowIcon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath);
+        if (_windowIcon is null)
+        {
+            return;
+        }
+
+        var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        SendMessage(windowHandle, WindowMessageSetIcon, SmallIcon, _windowIcon.Handle);
+        SendMessage(windowHandle, WindowMessageSetIcon, BigIcon, _windowIcon.Handle);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern nint SendMessage(nint windowHandle, uint message, nuint parameter, nint value);
 }

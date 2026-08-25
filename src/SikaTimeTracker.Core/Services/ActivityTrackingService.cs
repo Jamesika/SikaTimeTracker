@@ -338,7 +338,9 @@ public sealed class ActivityTrackingService : IAsyncDisposable
         DateTimeOffset startUtc,
         CancellationToken cancellationToken)
     {
-        if (snapshot is null || _currentActivityId.HasValue)
+        if (snapshot is null
+            || _currentActivityId.HasValue
+            || ProcessExclusionPolicy.ShouldExclude(snapshot.ProcessName))
         {
             return;
         }

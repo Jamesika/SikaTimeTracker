@@ -64,6 +64,24 @@ public sealed class ActivityStatisticsServiceTests
         Assert.AreEqual(TimeSpan.FromHours(1), timeline[0].Duration);
     }
 
+    [TestMethod]
+    public void AssignTimelineLanes_ReusesRowsAndSeparatesOverlaps()
+    {
+        var start = new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero);
+        var activities = new[]
+        {
+            Timeline(1, start, start.AddHours(2)),
+            Timeline(2, start.AddMinutes(30), start.AddHours(1)),
+            Timeline(3, start.AddHours(2), start.AddHours(3))
+        };
+
+        var lanes = _service.AssignTimelineLanes(activities);
+
+        Assert.AreEqual(0, lanes[1]);
+        Assert.AreEqual(1, lanes[2]);
+        Assert.AreEqual(0, lanes[3]);
+    }
+
     private static ActivitySegment Segment(
         DateTimeOffset start,
         DateTimeOffset end,
@@ -78,6 +96,22 @@ public sealed class ActivityStatisticsServiceTests
             "Editor",
             categoryId,
             null,
+            false);
+    }
+
+    private static TimelineActivity Timeline(
+        long id,
+        DateTimeOffset start,
+        DateTimeOffset end)
+    {
+        return new TimelineActivity(
+            id,
+            start,
+            end,
+            end - start,
+            "Code",
+            "Editor",
+            2,
             false);
     }
 }
