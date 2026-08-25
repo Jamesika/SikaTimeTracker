@@ -45,6 +45,8 @@ public sealed class ActivityTrackingService : IAsyncDisposable
 
     public event EventHandler<TrackingStatus>? StatusChanged;
 
+    public event EventHandler? ActivityRecorded;
+
     public TrackingStatus Status => CreateStatus();
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
@@ -369,6 +371,7 @@ public sealed class ActivityTrackingService : IAsyncDisposable
 
         var activityId = _currentActivityId.Value;
         var endUtc = requestedEndUtc < _currentStartUtc ? _currentStartUtc : requestedEndUtc;
+        var recorded = false;
         if (endUtc - _currentStartUtc < _options.MinimumActivityDuration)
         {
             await _store.DeleteActivityAsync(activityId, cancellationToken);
@@ -381,11 +384,16 @@ public sealed class ActivityTrackingService : IAsyncDisposable
                     activityId,
                     _options.AdjacentMergeGap,
                     cancellationToken);
+                recorded = true;
             }
         }
 
         _currentActivityId = null;
         _currentWindow = null;
+        if (recorded)
+        {
+            ActivityRecorded?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     private bool IsIdle()

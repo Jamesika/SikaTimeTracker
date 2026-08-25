@@ -14,22 +14,21 @@
                         <TextBlock Style="{StaticResource PageTitleStyle}" Text="活动" />
                         <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="回顾你的时间投入与每日节奏" />
                     </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
                         <ComboBox
                             x:Name="CategoryFilter"
                             Width="170"
+                            Height="36"
+                            VerticalAlignment="Center"
                             DisplayMemberPath="Name"
                             PlaceholderText="全部分类"
                             SelectionChanged="OnCategoryFilterChanged" />
-                        <Button Click="OnPreviousYearClicked" ToolTipService.ToolTip="上一年">
+                        <Button Height="36" MinWidth="40" VerticalAlignment="Center" Click="OnPreviousYearClicked" ToolTipService.ToolTip="上一年">
                             <FontIcon Glyph="&#xE76B;" />
                         </Button>
-                        <Button x:Name="YearButton" Click="OnCurrentYearClicked" />
-                        <Button Click="OnNextYearClicked" ToolTipService.ToolTip="下一年">
+                        <Button x:Name="YearButton" Height="36" MinWidth="72" VerticalAlignment="Center" Click="OnCurrentYearClicked" />
+                        <Button Height="36" MinWidth="40" VerticalAlignment="Center" Click="OnNextYearClicked" ToolTipService.ToolTip="下一年">
                             <FontIcon Glyph="&#xE76C;" />
-                        </Button>
-                        <Button Click="OnRefreshClicked" ToolTipService.ToolTip="刷新">
-                            <FontIcon Glyph="&#xE72C;" />
                         </Button>
                     </StackPanel>
                 </Grid>
@@ -66,18 +65,23 @@
                             <TextBlock Style="{StaticResource SectionTitleStyle}" Text="活动热力图" />
                             <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="5">
                                 <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="少" />
-                                <Border Width="11" Height="11" Background="#16808080" CornerRadius="2" />
-                                <Border Width="11" Height="11" Background="#464F6BED" CornerRadius="2" />
-                                <Border Width="11" Height="11" Background="#824F6BED" CornerRadius="2" />
-                                <Border Width="11" Height="11" Background="#BE4F6BED" CornerRadius="2" />
-                                <Border Width="11" Height="11" Background="#FF4F6BED" CornerRadius="2" />
+                                <Border Width="11" Height="11" Background="#1A8C959F" CornerRadius="2" />
+                                <Border Width="11" Height="11" Background="#9BE9A8" CornerRadius="2" />
+                                <Border Width="11" Height="11" Background="#40C463" CornerRadius="2" />
+                                <Border Width="11" Height="11" Background="#30A14E" CornerRadius="2" />
+                                <Border Width="11" Height="11" Background="#216E39" CornerRadius="2" />
                                 <TextBlock Margin="4,0,0,0" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="多" />
                             </StackPanel>
                         </Grid>
-                        <ScrollViewer HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Enabled" VerticalScrollMode="Disabled">
+                        <ScrollViewer
+                            x:Name="HeatmapScrollViewer"
+                            HorizontalScrollBarVisibility="Auto"
+                            HorizontalScrollMode="Enabled"
+                            SizeChanged="OnHeatmapViewportSizeChanged"
+                            VerticalScrollMode="Disabled">
                             <StackPanel Spacing="6">
-                                <Grid x:Name="MonthHeaderGrid" Height="18" />
-                                <Grid x:Name="HeatmapGrid" ColumnSpacing="3" RowSpacing="3" />
+                                <Grid x:Name="MonthHeaderGrid" Height="22" HorizontalAlignment="Left" />
+                                <Grid x:Name="HeatmapGrid" HorizontalAlignment="Left" />
                             </StackPanel>
                         </ScrollViewer>
                         <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="点击日期可在下方查看当天时间轴" />
@@ -93,32 +97,15 @@
                             </StackPanel>
                             <Button HorizontalAlignment="Right" Click="OnTodayClicked" Content="返回今天" />
                         </Grid>
-                        <Grid MinHeight="180">
-                            <ListView
-                                x:Name="TimelineList"
-                                IsItemClickEnabled="True"
-                                ItemClick="OnTimelineItemClicked"
-                                SelectionMode="None">
-                                <ListView.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Padding="4,10" ColumnSpacing="12">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="104" />
-                                                <ColumnDefinition Width="5" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding TimeText}" />
-                                            <Border Grid.Column="1" Background="{Binding CategoryBrush}" CornerRadius="3" />
-                                            <StackPanel Grid.Column="2" Spacing="2">
-                                                <TextBlock FontWeight="SemiBold" Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding Subtitle}" TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
-                                            <TextBlock Grid.Column="3" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding DurationText}" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListView.ItemTemplate>
-                            </ListView>
+                        <Grid MinHeight="166">
+                            <ScrollViewer
+                                x:Name="TimelineViewport"
+                                HorizontalScrollBarVisibility="Auto"
+                                HorizontalScrollMode="Enabled"
+                                SizeChanged="OnTimelineViewportSizeChanged"
+                                VerticalScrollMode="Disabled">
+                                <Canvas x:Name="TimelineCanvas" Height="136" MinWidth="1152" />
+                            </ScrollViewer>
                             <StackPanel x:Name="EmptyTimeline" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
                                 <FontIcon Glyph="&#xE823;" FontSize="28" />
                                 <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="这一天没有活动记录" />

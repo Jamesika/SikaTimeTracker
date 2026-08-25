@@ -76,6 +76,21 @@ public sealed class ActivityTrackingServiceTests
         Assert.AreEqual("steam", fixture.Store.Activities[1].ProcessName);
     }
 
+    [TestMethod]
+    public async Task ForegroundChange_RaisesActivityRecordedAfterSegmentIsFinalized()
+    {
+        var start = DateTimeOffset.UtcNow;
+        var fixture = await TrackingFixture.CreateAsync(start);
+        await using var tracker = fixture.Tracker;
+        var recordedCount = 0;
+        tracker.ActivityRecorded += (_, _) => recordedCount++;
+
+        await tracker.ProcessForegroundWindowAsync(
+            new WindowSnapshot(2, "steam", "Library", start.AddMinutes(3)));
+
+        Assert.AreEqual(1, recordedCount);
+    }
+
     private sealed class TrackingFixture
     {
         private TrackingFixture(

@@ -1,7 +1,9 @@
 using System.Globalization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Shapes;
 using SikaTimeTracker.Core.Contracts;
 using SikaTimeTracker.Core.Models;
 using SikaTimeTracker.Core.Services;
@@ -10,39 +12,104 @@ namespace SikaTimeTracker.Views;
 
 public sealed partial class ActivityView : UserControl
 {
+    private const double MinimumHeatmapCellSize = 13;
+    private const double HeatmapCellSpacing = 3;
+    private const double MinimumTimelineWidth = 1152;
     private readonly IActivityStore _store;
     private readonly ActivityStatisticsService _statistics = new();
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.Local;
+    private readonly DispatcherTimer _refreshTimer;
     private IReadOnlyList<Category> _categories = [];
     private IReadOnlyList<ActivitySegment> _activities = [];
     private IReadOnlyList<DailyActivityTotal> _dailyTotals = [];
+    private IReadOnlyList<TimelineDisplayItem> _timelineItems = [];
     private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Today);
     private int _selectedYear = DateTime.Today.Year;
     private bool _isLoaded;
+    private bool _isControlLoaded;
+    private bool _isHostActive;
+    private bool _isRefreshing;
+    private bool _refreshPending;
+    private double _lastHeatmapViewportWidth;
+    private double _lastTimelineViewportWidth;
 
     public ActivityView(IActivityStore store)
     {
         _store = store;
         InitializeComponent();
+        _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _refreshTimer.Tick += OnRefreshTimerTick;
         Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs args)
     {
-        if (_isLoaded)
+        _isControlLoaded = true;
+        UpdateAutoRefreshState();
+        if (!_isLoaded)
         {
+            _isLoaded = true;
+            await LoadCategoriesAsync();
+            await RefreshAsync();
             return;
         }
 
-        _isLoaded = true;
-        await LoadCategoriesAsync();
-        await RefreshAsync();
+        if (_isHostActive)
+        {
+            await RefreshAsync();
+        }
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs args)
+    {
+        _isControlLoaded = false;
+        UpdateAutoRefreshState();
+    }
+
+    public void SetHostActive(bool isActive)
+    {
+        var becameActive = !_isHostActive && isActive;
+        _isHostActive = isActive;
+        UpdateAutoRefreshState();
+        if (becameActive && _isControlLoaded && _isLoaded)
+        {
+            RequestRefresh();
+        }
+    }
+
+    public void RequestRefresh()
+    {
+        if (_isControlLoaded && _isHostActive)
+        {
+            _ = RefreshAsync();
+        }
+    }
+
+    private void UpdateAutoRefreshState()
+    {
+        if (_isControlLoaded && _isHostActive)
+        {
+            if (!_refreshTimer.IsEnabled)
+            {
+                _refreshTimer.Start();
+            }
+        }
+        else
+        {
+            _refreshTimer.Stop();
+        }
+    }
+
+    private void OnRefreshTimerTick(object? sender, object args)
+    {
+        RequestRefresh();
     }
 
     private async Task LoadCategoriesAsync()
     {
         _categories = await _store.GetCategoriesAsync();
-        var filters = new List<CategoryFilterItem> { new(null, "全部分类", "#4F6BED") };
+        var filters = new List<CategoryFilterItem> { new(null, "全部分类", "#2EA043") };
         filters.AddRange(_categories.Select(category => new CategoryFilterItem(
             category.Id,
             category.Name,
@@ -53,6 +120,13 @@ public sealed partial class ActivityView : UserControl
 
     private async Task RefreshAsync()
     {
+        if (_isRefreshing)
+        {
+            _refreshPending = true;
+            return;
+        }
+
+        _isRefreshing = true;
         LoadingIndicator.IsActive = true;
         LoadingIndicator.Visibility = Visibility.Visible;
         try
@@ -69,6 +143,12 @@ public sealed partial class ActivityView : UserControl
         {
             LoadingIndicator.IsActive = false;
             LoadingIndicator.Visibility = Visibility.Collapsed;
+            _isRefreshing = false;
+            if (_refreshPending && _isControlLoaded && _isHostActive)
+            {
+                _refreshPending = false;
+                _ = RefreshAsync();
+            }
         }
     }
 
@@ -99,19 +179,29 @@ public sealed partial class ActivityView : UserControl
         var firstOffset = ((int)firstDate.DayOfWeek + 6) % 7;
         var gridStart = firstDate.AddDays(-firstOffset);
         var weekCount = ((lastDate.DayNumber - gridStart.DayNumber) / 7) + 1;
+        var viewportWidth = Math.Max(0, HeatmapScrollViewer.ActualWidth - 2);
+        var minimumWidth = weekCount * MinimumHeatmapCellSize + (weekCount - 1) * HeatmapCellSpacing;
+        var cellSize = viewportWidth > minimumWidth
+            ? (viewportWidth - (weekCount - 1) * HeatmapCellSpacing) / weekCount
+            : MinimumHeatmapCellSize;
+        var totalWidth = weekCount * cellSize + (weekCount - 1) * HeatmapCellSpacing;
+        HeatmapGrid.Width = totalWidth;
+        HeatmapGrid.ColumnSpacing = HeatmapCellSpacing;
+        HeatmapGrid.RowSpacing = HeatmapCellSpacing;
+        MonthHeaderGrid.Width = totalWidth;
+        MonthHeaderGrid.ColumnSpacing = HeatmapCellSpacing;
         for (var week = 0; week < weekCount; week++)
         {
-            HeatmapGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(13) });
-            MonthHeaderGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(16) });
+            HeatmapGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(cellSize) });
+            MonthHeaderGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(cellSize) });
         }
 
         for (var day = 0; day < 7; day++)
         {
-            HeatmapGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(13) });
+            HeatmapGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(cellSize) });
         }
 
         var totalsByDate = _dailyTotals.ToDictionary(item => item.Date, item => item.Duration);
-        var baseColor = ParseColor((CategoryFilter.SelectedItem as CategoryFilterItem)?.Color ?? "#4F6BED");
         for (var date = firstDate; date <= lastDate; date = date.AddDays(1))
         {
             var daysFromStart = date.DayNumber - gridStart.DayNumber;
@@ -120,14 +210,14 @@ public sealed partial class ActivityView : UserControl
             var duration = totalsByDate.GetValueOrDefault(date);
             var button = new Button
             {
-                Width = 13,
-                Height = 13,
+                Width = cellSize,
+                Height = cellSize,
                 MinWidth = 0,
                 MinHeight = 0,
                 Padding = new Thickness(0),
                 BorderThickness = date == _selectedDate ? new Thickness(2) : new Thickness(0),
                 CornerRadius = new CornerRadius(2),
-                Background = CreateIntensityBrush(baseColor, duration),
+                Background = CreateIntensityBrush(duration),
                 Tag = date
             };
             if (date == _selectedDate)
@@ -146,13 +236,20 @@ public sealed partial class ActivityView : UserControl
         {
             var monthDate = new DateOnly(_selectedYear, month, 1);
             var week = (monthDate.DayNumber - gridStart.DayNumber) / 7;
+            var nextMonthDate = month == 12
+                ? lastDate.AddDays(1)
+                : new DateOnly(_selectedYear, month + 1, 1);
+            var nextWeek = Math.Min(weekCount, (nextMonthDate.DayNumber - gridStart.DayNumber) / 7);
             var label = new TextBlock
             {
                 FontSize = 11,
                 Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray),
-                Text = $"{month}月"
+                Text = $"{month}月",
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.None
             };
             Grid.SetColumn(label, Math.Clamp(week, 0, weekCount - 1));
+            Grid.SetColumnSpan(label, Math.Max(1, nextWeek - week));
             MonthHeaderGrid.Children.Add(label);
         }
     }
@@ -183,26 +280,159 @@ public sealed partial class ActivityView : UserControl
             _timeZone,
             SelectedCategoryId);
         var categoriesById = _categories.ToDictionary(category => category.Id);
-        var items = timeline.Select(activity =>
+        _timelineItems = timeline.Select(activity =>
         {
             categoriesById.TryGetValue(activity.CategoryId, out var category);
+            var appName = FormatApplicationName(activity.ProcessName);
             var title = string.IsNullOrWhiteSpace(activity.WindowTitle)
-                ? activity.ProcessName
+                ? appName
                 : activity.WindowTitle;
             return new TimelineDisplayItem(
                 activity,
                 $"{activity.StartLocal:HH:mm}–{activity.EndLocal:HH:mm}",
+                appName,
                 title,
-                $"{activity.ProcessName} · {category?.Name ?? "未知分类"}",
+                category?.Name ?? "未知分类",
                 FormatDuration(activity.Duration),
                 new SolidColorBrush(ParseColor(category?.Color ?? "#8A8886")));
         }).ToArray();
 
         TimelineTitleText.Text = $"{_selectedDate:yyyy年M月d日} 时间轴";
-        TimelineSummaryText.Text = $"共 {items.Length} 段活动，累计 {FormatDuration(timeline.Aggregate(TimeSpan.Zero, (sum, item) => sum + item.Duration))}";
-        TimelineList.ItemsSource = items;
-        TimelineList.Visibility = items.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
-        EmptyTimeline.Visibility = items.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        TimelineSummaryText.Text = $"共 {_timelineItems.Count} 段活动，累计 {FormatDuration(timeline.Aggregate(TimeSpan.Zero, (sum, item) => sum + item.Duration))}";
+        TimelineViewport.Visibility = _timelineItems.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        EmptyTimeline.Visibility = _timelineItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RenderTimelineCanvas();
+    }
+
+    private void RenderTimelineCanvas()
+    {
+        TimelineCanvas.Children.Clear();
+        if (_timelineItems.Count == 0)
+        {
+            return;
+        }
+
+        var width = Math.Max(MinimumTimelineWidth, TimelineViewport.ActualWidth - 2);
+        TimelineCanvas.Width = width;
+        var trackTop = 38d;
+        var trackHeight = 62d;
+        var gridBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(48, 128, 128, 128));
+        var labelBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(210, 128, 128, 128));
+        var track = new Border
+        {
+            Width = width,
+            Height = trackHeight,
+            Background = new SolidColorBrush(Windows.UI.Color.FromArgb(24, 128, 128, 128)),
+            CornerRadius = new CornerRadius(6)
+        };
+        Canvas.SetTop(track, trackTop);
+        TimelineCanvas.Children.Add(track);
+
+        for (var hour = 0; hour <= 24; hour += 2)
+        {
+            var x = width * hour / 24d;
+            var line = new Line
+            {
+                X1 = x,
+                X2 = x,
+                Y1 = 26,
+                Y2 = trackTop + trackHeight + 8,
+                Stroke = gridBrush,
+                StrokeThickness = hour is 0 or 24 ? 1.5 : 1
+            };
+            TimelineCanvas.Children.Add(line);
+            var label = new TextBlock
+            {
+                Width = 44,
+                Text = $"{hour:00}:00",
+                FontSize = 11,
+                Foreground = labelBrush,
+                TextAlignment = TextAlignment.Center
+            };
+            Canvas.SetLeft(label, Math.Clamp(x - 22, 0, width - 44));
+            Canvas.SetTop(label, 4);
+            TimelineCanvas.Children.Add(label);
+        }
+
+        foreach (var item in _timelineItems)
+        {
+            var startMinutes = GetMinuteOfDay(item.Activity.StartLocal, isEnd: false);
+            var endMinutes = GetMinuteOfDay(item.Activity.EndLocal, isEnd: true);
+            var left = width * startMinutes / 1440d;
+            var segmentWidth = Math.Max(2, width * Math.Max(0, endMinutes - startMinutes) / 1440d);
+            segmentWidth = Math.Min(segmentWidth, width - left);
+            var label = new TextBlock
+            {
+                Text = segmentWidth >= 42 ? item.ApplicationName : string.Empty,
+                FontSize = 12,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var segment = new Border
+            {
+                Width = segmentWidth,
+                Height = trackHeight - 8,
+                Padding = segmentWidth >= 42 ? new Thickness(7, 0, 7, 0) : new Thickness(0),
+                Background = item.CategoryBrush,
+                BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(60, 0, 0, 0)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(4),
+                Child = label,
+                Tag = item
+            };
+            ToolTipService.SetToolTip(
+                segment,
+                $"{item.ApplicationName}\n{item.Title}\n分类：{item.CategoryName}\n时间：{item.TimeText}\n持续：{item.DurationText}");
+            segment.Tapped += OnTimelineSegmentTapped;
+            Canvas.SetLeft(segment, left);
+            Canvas.SetTop(segment, trackTop + 4);
+            TimelineCanvas.Children.Add(segment);
+        }
+    }
+
+    private double GetMinuteOfDay(DateTimeOffset value, bool isEnd)
+    {
+        var valueDate = DateOnly.FromDateTime(value.Date);
+        if (valueDate < _selectedDate)
+        {
+            return 0;
+        }
+
+        if (valueDate > _selectedDate)
+        {
+            return 1440;
+        }
+
+        if (isEnd && value.TimeOfDay == TimeSpan.Zero && valueDate == _selectedDate.AddDays(1))
+        {
+            return 1440;
+        }
+
+        return value.TimeOfDay.TotalMinutes;
+    }
+
+    private void OnHeatmapViewportSizeChanged(object sender, SizeChangedEventArgs args)
+    {
+        if (!_isLoaded || Math.Abs(args.NewSize.Width - _lastHeatmapViewportWidth) < 1)
+        {
+            return;
+        }
+
+        _lastHeatmapViewportWidth = args.NewSize.Width;
+        RenderHeatmap(new DateOnly(_selectedYear, 1, 1), new DateOnly(_selectedYear, 12, 31));
+    }
+
+    private void OnTimelineViewportSizeChanged(object sender, SizeChangedEventArgs args)
+    {
+        if (!_isLoaded || Math.Abs(args.NewSize.Width - _lastTimelineViewportWidth) < 1)
+        {
+            return;
+        }
+
+        _lastTimelineViewportWidth = args.NewSize.Width;
+        RenderTimelineCanvas();
     }
 
     private async void OnCategoryFilterChanged(object sender, SelectionChangedEventArgs args)
@@ -238,11 +468,6 @@ public sealed partial class ActivityView : UserControl
         await RefreshAsync();
     }
 
-    private async void OnRefreshClicked(object sender, RoutedEventArgs args)
-    {
-        await RefreshAsync();
-    }
-
     private void OnTodayClicked(object sender, RoutedEventArgs args)
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
@@ -267,13 +492,18 @@ public sealed partial class ActivityView : UserControl
         }
     }
 
-    private async void OnTimelineItemClicked(object sender, ItemClickEventArgs args)
+    private void OnTimelineSegmentTapped(object sender, TappedRoutedEventArgs args)
     {
-        if (args.ClickedItem is not TimelineDisplayItem item)
+        if (sender is not FrameworkElement { Tag: TimelineDisplayItem item })
         {
             return;
         }
 
+        _ = ShowTimelineDetailsAsync(item);
+    }
+
+    private async Task ShowTimelineDetailsAsync(TimelineDisplayItem item)
+    {
         var details = new StackPanel { Spacing = 10, MaxWidth = 520 };
         details.Children.Add(new TextBlock { Text = item.TimeText + " · " + item.DurationText });
         details.Children.Add(new TextBlock { Text = item.Activity.ProcessName, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
@@ -310,20 +540,23 @@ public sealed partial class ActivityView : UserControl
 
     private long? SelectedCategoryId => (CategoryFilter.SelectedItem as CategoryFilterItem)?.Id;
 
-    private static SolidColorBrush CreateIntensityBrush(Windows.UI.Color baseColor, TimeSpan duration)
+    private static SolidColorBrush CreateIntensityBrush(TimeSpan duration)
     {
-        var alpha = duration switch
+        var color = duration switch
         {
-            { Ticks: <= 0 } => (byte)22,
-            { TotalMinutes: < 30 } => (byte)70,
-            { TotalHours: < 2 } => (byte)130,
-            { TotalHours: < 4 } => (byte)190,
-            _ => byte.MaxValue
+            { Ticks: <= 0 } => Windows.UI.Color.FromArgb(26, 140, 149, 159),
+            { TotalMinutes: < 30 } => Windows.UI.Color.FromArgb(255, 155, 233, 168),
+            { TotalHours: < 2 } => Windows.UI.Color.FromArgb(255, 64, 196, 99),
+            { TotalHours: < 4 } => Windows.UI.Color.FromArgb(255, 48, 161, 78),
+            _ => Windows.UI.Color.FromArgb(255, 33, 110, 57)
         };
-        var color = duration <= TimeSpan.Zero
-            ? Windows.UI.Color.FromArgb(alpha, 128, 128, 128)
-            : Windows.UI.Color.FromArgb(alpha, baseColor.R, baseColor.G, baseColor.B);
         return new SolidColorBrush(color);
+    }
+
+    private static string FormatApplicationName(string processName)
+    {
+        var name = System.IO.Path.GetFileNameWithoutExtension(processName);
+        return string.IsNullOrWhiteSpace(name) ? processName : name;
     }
 
     private static Windows.UI.Color ParseColor(string value)
@@ -359,8 +592,9 @@ public sealed partial class ActivityView : UserControl
     public sealed record TimelineDisplayItem(
         TimelineActivity Activity,
         string TimeText,
+        string ApplicationName,
         string Title,
-        string Subtitle,
+        string CategoryName,
         string DurationText,
         Brush CategoryBrush);
 }

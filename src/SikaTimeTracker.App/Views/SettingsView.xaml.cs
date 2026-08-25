@@ -17,6 +17,7 @@ public sealed partial class SettingsView : UserControl
     private readonly Action<AppPreferences> _applyPreferences;
     private readonly string _dataDirectory;
     private AppPreferences _preferences;
+    private AppPreferences _baselinePreferences = new();
 
     public SettingsView(
         IActivityStore store,
@@ -36,6 +37,7 @@ public sealed partial class SettingsView : UserControl
         _applyPreferences = applyPreferences;
         InitializeComponent();
         PopulateControls();
+        _baselinePreferences = ReadPreferencesFromControls();
     }
 
     private void PopulateControls()
@@ -58,22 +60,44 @@ public sealed partial class SettingsView : UserControl
         DatabasePathBox.Text = Path.Combine(_dataDirectory, "activity.db");
     }
 
+    public bool HasUnsavedChanges => ReadPreferencesFromControls() != _baselinePreferences;
+
+    public async Task<bool> ConfirmNavigationAsync()
+    {
+        if (!HasUnsavedChanges)
+        {
+            return true;
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = "设置尚未保存",
+            Content = "要在离开设置页面前保存这些更改吗？",
+            PrimaryButtonText = "保存",
+            SecondaryButtonText = "放弃更改",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary
+        };
+        return await dialog.ShowAsync() switch
+        {
+            ContentDialogResult.Primary => await SaveAsync(),
+            ContentDialogResult.Secondary => true,
+            _ => false
+        };
+    }
+
     private async void OnSaveClicked(object sender, RoutedEventArgs args)
+    {
+        await SaveAsync();
+    }
+
+    private async Task<bool> SaveAsync()
     {
         SetBusy(true);
         try
         {
-            _preferences = new AppPreferences
-            {
-                RunAtStartup = RunAtStartupToggle.IsOn,
-                StartMinimized = StartMinimizedToggle.IsOn,
-                IdleDetectionEnabled = IdleDetectionToggle.IsOn,
-                IdleThresholdMinutes = GetNumber(IdleMinutesBox, 5),
-                MinimumActivitySeconds = GetNumber(MinimumSecondsBox, 2),
-                MergeGapSeconds = GetNumber(MergeGapSecondsBox, 10),
-                RecordWindowTitles = RecordTitlesToggle.IsOn,
-                Theme = ((ThemeChoice)ThemeBox.SelectedItem).Value
-            };
+            _preferences = ReadPreferencesFromControls();
             await _settingsService.SaveAsync(_preferences);
             _startupService.SetEnabled(_preferences.RunAtStartup, _preferences.StartMinimized);
             await _trackingService.UpdateConfigurationAsync(
@@ -86,16 +110,34 @@ public sealed partial class SettingsView : UserControl
                 },
                 _preferences.RecordWindowTitles);
             _applyPreferences(_preferences);
+            _baselinePreferences = _preferences;
             ShowMessage("设置已保存并生效", InfoBarSeverity.Success);
+            return true;
         }
         catch (Exception exception)
         {
             ShowMessage($"保存失败：{exception.Message}", InfoBarSeverity.Error);
+            return false;
         }
         finally
         {
             SetBusy(false);
         }
+    }
+
+    private AppPreferences ReadPreferencesFromControls()
+    {
+        return new AppPreferences
+        {
+            RunAtStartup = RunAtStartupToggle.IsOn,
+            StartMinimized = StartMinimizedToggle.IsOn,
+            IdleDetectionEnabled = IdleDetectionToggle.IsOn,
+            IdleThresholdMinutes = GetNumber(IdleMinutesBox, 5),
+            MinimumActivitySeconds = GetNumber(MinimumSecondsBox, 2),
+            MergeGapSeconds = GetNumber(MergeGapSecondsBox, 10),
+            RecordWindowTitles = RecordTitlesToggle.IsOn,
+            Theme = (ThemeBox.SelectedItem as ThemeChoice)?.Value ?? AppTheme.System
+        };
     }
 
     private void OnOpenDataFolderClicked(object sender, RoutedEventArgs args)

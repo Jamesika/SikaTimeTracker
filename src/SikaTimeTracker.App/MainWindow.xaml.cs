@@ -18,6 +18,10 @@ public sealed partial class MainWindow : Window
     private readonly string _dataDirectory;
     private AppPreferences _preferences;
     private bool _exitRequested;
+    private bool _isChangingSelection;
+    private bool _isWindowActive = true;
+    private string _currentTag = "activity";
+    private FrameworkElement? _currentPage;
 
     public event EventHandler? Exiting;
 
@@ -39,11 +43,15 @@ public sealed partial class MainWindow : Window
         Title = "Sika Time Tracker";
         SystemBackdrop = new MicaBackdrop();
         AppWindow.Resize(new SizeInt32(1180, 760));
+        _isChangingSelection = true;
         RootNavigation.SelectedItem = RootNavigation.MenuItems[0];
+        _isChangingSelection = false;
         ApplyTheme(_preferences.Theme);
         ShowPage("activity");
         _trackingService.StatusChanged += OnTrackingStatusChanged;
+        _trackingService.ActivityRecorded += OnActivityRecorded;
         AppWindow.Closing += OnWindowClosing;
+        Activated += OnWindowActivated;
     }
 
     private async void OnPauseClicked(object sender, RoutedEventArgs args)
@@ -61,14 +69,27 @@ public sealed partial class MainWindow : Window
         });
     }
 
+    private void OnActivityRecorded(object? sender, EventArgs args)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_currentPage is ActivityView activity)
+            {
+                activity.RequestRefresh();
+            }
+        });
+    }
+
     public void ShowFromTray()
     {
         AppWindow.Show();
         Activate();
+        SetWindowActive(true);
     }
 
     public void HideToTray()
     {
+        SetWindowActive(false);
         AppWindow.Hide();
     }
 
@@ -87,6 +108,7 @@ public sealed partial class MainWindow : Window
 
         _exitRequested = true;
         _trackingService.StatusChanged -= OnTrackingStatusChanged;
+        _trackingService.ActivityRecorded -= OnActivityRecorded;
         await _trackingService.DisposeAsync();
         Exiting?.Invoke(this, EventArgs.Empty);
         Application.Current.Exit();
@@ -103,18 +125,37 @@ public sealed partial class MainWindow : Window
         HideToTray();
     }
 
-    private void OnSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
+    private async void OnSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        if (args.SelectedItemContainer?.Tag is string tag)
+        if (_isChangingSelection
+            || args.SelectedItemContainer?.Tag is not string tag
+            || tag == _currentTag)
         {
-            ShowPage(tag);
+            return;
         }
+
+        if (_currentPage is SettingsView settings && !await settings.ConfirmNavigationAsync())
+        {
+            _isChangingSelection = true;
+            RootNavigation.SelectedItem = RootNavigation.MenuItems
+                .OfType<NavigationViewItem>()
+                .First(item => string.Equals(item.Tag as string, _currentTag, StringComparison.Ordinal));
+            _isChangingSelection = false;
+            return;
+        }
+
+        ShowPage(tag);
     }
 
     private void ShowPage(string tag)
     {
+        if (_currentPage is ActivityView previousActivity)
+        {
+            previousActivity.SetHostActive(false);
+        }
+
         ContentHost.Children.Clear();
-        ContentHost.Children.Add(tag switch
+        _currentPage = tag switch
         {
             "rules" => new RulesView(_activityStore, _trackingService),
             "settings" => new SettingsView(
@@ -126,7 +167,27 @@ public sealed partial class MainWindow : Window
                 _dataDirectory,
                 ApplyPreferences),
             _ => new ActivityView(_activityStore)
-        });
+        };
+        _currentTag = tag;
+        ContentHost.Children.Add(_currentPage);
+        if (_currentPage is ActivityView activity)
+        {
+            activity.SetHostActive(_isWindowActive);
+        }
+    }
+
+    private void OnWindowActivated(object sender, WindowActivatedEventArgs args)
+    {
+        SetWindowActive(args.WindowActivationState != WindowActivationState.Deactivated);
+    }
+
+    private void SetWindowActive(bool isActive)
+    {
+        _isWindowActive = isActive;
+        if (_currentPage is ActivityView activity)
+        {
+            activity.SetHostActive(isActive);
+        }
     }
 
     private void ApplyTheme(AppTheme theme)
