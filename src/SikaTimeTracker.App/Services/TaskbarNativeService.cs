@@ -9,13 +9,16 @@ internal static class TaskbarNativeService
     private const uint AppBarGetTaskbarPosition = 0x00000005;
     private const nuint AppBarStateAutoHide = 0x00000001;
     private const uint MonitorDefaultToNearest = 0x00000002;
+    private const int WindowLongOwner = -8;
     private const int WindowLongExtendedStyle = -20;
     private const nint WindowStyleToolWindow = 0x00000080;
     private const uint SetWindowPositionNoActivate = 0x0010;
     private const uint SetWindowPositionShowWindow = 0x0040;
     private const int ShowWindowHide = 0;
     private const int DwmWindowCornerPreference = 33;
+    private const int DwmWindowBorderColor = 34;
     private const int DwmWindowCornerRoundSmall = 3;
+    private const int DwmColorNone = unchecked((int)0xFFFFFFFE);
     private static readonly nint TopmostWindow = new(-1);
 
     public static bool TryGetTaskbarState(out TaskbarState state)
@@ -99,10 +102,20 @@ internal static class TaskbarNativeService
             DwmWindowCornerPreference,
             ref cornerPreference,
             sizeof(int));
+        var borderColor = DwmColorNone;
+        _ = DwmSetWindowAttribute(
+            windowHandle,
+            DwmWindowBorderColor,
+            ref borderColor,
+            sizeof(int));
     }
 
-    public static bool PlaceAndShow(nint windowHandle, TaskbarBadgePlacement placement)
+    public static bool PlaceAndShow(
+        nint windowHandle,
+        nint taskbarWindowHandle,
+        TaskbarBadgePlacement placement)
     {
+        _ = SetWindowLongPtr(windowHandle, WindowLongOwner, taskbarWindowHandle);
         return SetWindowPos(
             windowHandle,
             TopmostWindow,
