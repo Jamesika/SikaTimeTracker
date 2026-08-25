@@ -216,6 +216,25 @@ public sealed partial class ActivityView : UserControl
             HeatmapGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(cellSize) });
         }
 
+        var localToday = DateOnly.FromDateTime(
+            TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, _timeZone).DateTime);
+        if (localToday >= firstDate && localToday <= lastDate)
+        {
+            var currentWeek = (localToday.DayNumber - gridStart.DayNumber) / 7;
+            var currentWeekMarker = new Border
+            {
+                Background = new SolidColorBrush(
+                    Windows.UI.Color.FromArgb(42, byte.MaxValue, byte.MaxValue, byte.MaxValue)),
+                CornerRadius = new CornerRadius(4),
+                Margin = new Thickness(-2),
+                IsHitTestVisible = false
+            };
+            Grid.SetColumn(currentWeekMarker, currentWeek);
+            Grid.SetRow(currentWeekMarker, 0);
+            Grid.SetRowSpan(currentWeekMarker, 7);
+            HeatmapGrid.Children.Add(currentWeekMarker);
+        }
+
         var totalsByDate = _dailyTotals.ToDictionary(item => item.Date, item => item.Duration);
         for (var date = firstDate; date <= lastDate; date = date.AddDays(1))
         {
@@ -251,24 +270,6 @@ public sealed partial class ActivityView : UserControl
             Grid.SetColumn(button, week);
             Grid.SetRow(button, day);
             HeatmapGrid.Children.Add(button);
-        }
-
-        var localToday = DateOnly.FromDateTime(
-            TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, _timeZone).DateTime);
-        if (localToday >= firstDate && localToday <= lastDate)
-        {
-            var currentWeek = (localToday.DayNumber - gridStart.DayNumber) / 7;
-            var currentWeekMarker = new Border
-            {
-                BorderBrush = new SolidColorBrush(
-                    Windows.UI.Color.FromArgb(150, byte.MaxValue, byte.MaxValue, byte.MaxValue)),
-                BorderThickness = new Thickness(0, 0, 0, 2),
-                IsHitTestVisible = false
-            };
-            Grid.SetColumn(currentWeekMarker, currentWeek);
-            Grid.SetRow(currentWeekMarker, 0);
-            Grid.SetRowSpan(currentWeekMarker, 7);
-            HeatmapGrid.Children.Add(currentWeekMarker);
         }
 
         for (var month = 1; month <= 12; month++)
