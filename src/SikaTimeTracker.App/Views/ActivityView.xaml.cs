@@ -223,6 +223,7 @@ public sealed partial class ActivityView : UserControl
             var week = daysFromStart / 7;
             var day = daysFromStart % 7;
             var duration = totalsByDate.GetValueOrDefault(date);
+            var intensityBrush = CreateIntensityBrush(duration);
             var button = new Button
             {
                 Width = cellSize,
@@ -232,9 +233,12 @@ public sealed partial class ActivityView : UserControl
                 Padding = new Thickness(0),
                 BorderThickness = date == _selectedDate ? new Thickness(2) : new Thickness(0),
                 CornerRadius = new CornerRadius(2),
-                Background = CreateIntensityBrush(duration),
+                Background = intensityBrush,
                 Tag = date
             };
+            button.Resources["ButtonBackground"] = intensityBrush;
+            button.Resources["ButtonBackgroundPointerOver"] = intensityBrush;
+            button.Resources["ButtonBackgroundPressed"] = intensityBrush;
             if (date == _selectedDate)
             {
                 button.BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.White);
@@ -247,6 +251,24 @@ public sealed partial class ActivityView : UserControl
             Grid.SetColumn(button, week);
             Grid.SetRow(button, day);
             HeatmapGrid.Children.Add(button);
+        }
+
+        var localToday = DateOnly.FromDateTime(
+            TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, _timeZone).DateTime);
+        if (localToday >= firstDate && localToday <= lastDate)
+        {
+            var currentWeek = (localToday.DayNumber - gridStart.DayNumber) / 7;
+            var currentWeekMarker = new Border
+            {
+                BorderBrush = new SolidColorBrush(
+                    Windows.UI.Color.FromArgb(150, byte.MaxValue, byte.MaxValue, byte.MaxValue)),
+                BorderThickness = new Thickness(0, 0, 0, 2),
+                IsHitTestVisible = false
+            };
+            Grid.SetColumn(currentWeekMarker, currentWeek);
+            Grid.SetRow(currentWeekMarker, 0);
+            Grid.SetRowSpan(currentWeekMarker, 7);
+            HeatmapGrid.Children.Add(currentWeekMarker);
         }
 
         for (var month = 1; month <= 12; month++)
@@ -609,10 +631,11 @@ public sealed partial class ActivityView : UserControl
     {
         var color = duration switch
         {
-            { Ticks: <= 0 } => Windows.UI.Color.FromArgb(26, 140, 149, 159),
-            { TotalMinutes: < 30 } => Windows.UI.Color.FromArgb(255, 155, 233, 168),
-            { TotalHours: < 2 } => Windows.UI.Color.FromArgb(255, 64, 196, 99),
-            { TotalHours: < 4 } => Windows.UI.Color.FromArgb(255, 48, 161, 78),
+            { TotalMinutes: <= 20 } => Windows.UI.Color.FromArgb(26, 140, 149, 159),
+            { TotalHours: < 2 } => Windows.UI.Color.FromArgb(255, 155, 233, 168),
+            { TotalHours: < 4 } => Windows.UI.Color.FromArgb(255, 64, 196, 99),
+            { TotalHours: < 6 } => Windows.UI.Color.FromArgb(255, 48, 161, 78),
+            { TotalHours: < 8 } => Windows.UI.Color.FromArgb(255, 40, 136, 68),
             _ => Windows.UI.Color.FromArgb(255, 33, 110, 57)
         };
         return new SolidColorBrush(color);

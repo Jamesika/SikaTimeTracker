@@ -69,6 +69,7 @@
                                 <Border Width="11" Height="11" Background="#9BE9A8" CornerRadius="2" />
                                 <Border Width="11" Height="11" Background="#40C463" CornerRadius="2" />
                                 <Border Width="11" Height="11" Background="#30A14E" CornerRadius="2" />
+                                <Border Width="11" Height="11" Background="#288844" CornerRadius="2" />
                                 <Border Width="11" Height="11" Background="#216E39" CornerRadius="2" />
                                 <TextBlock Margin="4,0,0,0" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="多" />
                             </StackPanel>
