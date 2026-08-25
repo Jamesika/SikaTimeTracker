@@ -20,10 +20,13 @@ public sealed partial class MainWindow : Window
     private readonly ApplicationSettingsService _settingsService;
     private readonly IStartupService _startupService;
     private readonly string _dataDirectory;
+    private readonly DispatcherTimer _trackingStatusTimer;
     private AppPreferences _preferences;
+    private TrackingStatus? _lastTrackingStatus;
     private bool _exitRequested;
     private bool _isChangingSelection;
     private bool _isWindowActive = true;
+    private bool _isWindowVisible = true;
     private string _currentTag = "activity";
     private FrameworkElement? _currentPage;
     private System.Drawing.Icon? _windowIcon;
@@ -56,23 +59,112 @@ public sealed partial class MainWindow : Window
         ShowPage("activity");
         _trackingService.StatusChanged += OnTrackingStatusChanged;
         _trackingService.ActivityRecorded += OnActivityRecorded;
+        _trackingStatusTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(1)
+        };
+        _trackingStatusTimer.Tick += OnTrackingStatusTimerTick;
+        _trackingStatusTimer.Start();
         AppWindow.Closing += OnWindowClosing;
         Activated += OnWindowActivated;
-    }
-
-    private async void OnPauseClicked(object sender, RoutedEventArgs args)
-    {
-        await _trackingService.SetPausedAsync(!_trackingService.Status.IsPaused);
     }
 
     private void OnTrackingStatusChanged(object? sender, TrackingStatus status)
     {
         DispatcherQueue.TryEnqueue(() =>
         {
-            StatusText.Text = status.StatusText;
-            PauseButton.Content = status.IsPaused ? "继续追踪" : "暂停追踪";
-            StatusIndicator.Opacity = status.IsTracking ? 1 : 0.45;
+            _lastTrackingStatus = status;
+            UpdateTrackingStatus(status);
         });
+    }
+
+    private void OnTrackingStatusTimerTick(object? sender, object args)
+    {
+        if (_isWindowVisible && _lastTrackingStatus is not null)
+        {
+            UpdateTrackingStatus(_lastTrackingStatus);
+        }
+    }
+
+    private void UpdateTrackingStatus(TrackingStatus status)
+    {
+        StatusText.Text = status.StatusText;
+        StatusIndicator.Fill = RootLayout.Resources[GetStatusBrushKey(status)] as Brush;
+
+        if (status.IsTracking && status.CurrentWindow is not null)
+        {
+            TrackedProcessText.Text = status.CurrentWindow.ProcessName;
+            TrackedWindowText.Text = status.CurrentWindow.WindowTitle;
+            TrackedWindowText.Visibility = string.IsNullOrWhiteSpace(status.CurrentWindow.WindowTitle)
+                                           || string.Equals(
+                                               status.CurrentWindow.ProcessName,
+                                               status.CurrentWindow.WindowTitle,
+                                               StringComparison.OrdinalIgnoreCase)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+            TrackingDurationText.Text = status.CurrentActivityStartedAtUtc is { } startedAt
+                ? $"本次 {FormatDuration(DateTimeOffset.UtcNow - startedAt)}"
+                : string.Empty;
+            return;
+        }
+
+        TrackingDurationText.Text = string.Empty;
+        TrackedWindowText.Visibility = Visibility.Visible;
+        if (!status.IsSystemInteractive)
+        {
+            TrackedProcessText.Text = "已停止计时";
+            TrackedWindowText.Text = "唤醒或解锁后自动恢复";
+        }
+        else if (status.IsIdle)
+        {
+            TrackedProcessText.Text = "已停止计时";
+            TrackedWindowText.Text = "检测到电脑无人操作";
+        }
+        else if (status.IsPaused)
+        {
+            TrackedProcessText.Text = "配置更新中";
+            TrackedWindowText.Text = "完成后自动恢复追踪";
+        }
+        else if (status.ForegroundWindow is { } foreground
+                 && ProcessExclusionPolicy.ShouldExclude(foreground.ProcessName))
+        {
+            TrackedProcessText.Text = "当前窗口不计入";
+            TrackedWindowText.Text = foreground.ProcessName;
+        }
+        else
+        {
+            TrackedProcessText.Text = "等待可记录窗口";
+            TrackedWindowText.Text = status.ForegroundWindow?.ProcessName ?? "暂无前台窗口";
+        }
+    }
+
+    private static string GetStatusBrushKey(TrackingStatus status)
+    {
+        if (status.IsTracking)
+        {
+            return "TrackingActiveBrush";
+        }
+
+        if (status.IsIdle)
+        {
+            return "TrackingAfkBrush";
+        }
+
+        return !status.IsSystemInteractive || status.IsPaused
+            ? "TrackingInactiveBrush"
+            : "TrackingReadyBrush";
+    }
+
+    private static string FormatDuration(TimeSpan duration)
+    {
+        if (duration < TimeSpan.Zero)
+        {
+            duration = TimeSpan.Zero;
+        }
+
+        return duration.TotalHours >= 1
+            ? $"{(int)duration.TotalHours:00}:{duration.Minutes:00}:{duration.Seconds:00}"
+            : $"{duration.Minutes:00}:{duration.Seconds:00}";
     }
 
     private void OnActivityRecorded(object? sender, EventArgs args)
@@ -88,13 +180,19 @@ public sealed partial class MainWindow : Window
 
     public void ShowFromTray()
     {
+        _isWindowVisible = true;
         AppWindow.Show();
         Activate();
         SetWindowActive(true);
+        if (_lastTrackingStatus is not null)
+        {
+            UpdateTrackingStatus(_lastTrackingStatus);
+        }
     }
 
     public void HideToTray()
     {
+        _isWindowVisible = false;
         SetWindowActive(false);
         AppWindow.Hide();
     }
@@ -113,6 +211,8 @@ public sealed partial class MainWindow : Window
         }
 
         _exitRequested = true;
+        _trackingStatusTimer.Stop();
+        _trackingStatusTimer.Tick -= OnTrackingStatusTimerTick;
         _trackingService.StatusChanged -= OnTrackingStatusChanged;
         _trackingService.ActivityRecorded -= OnActivityRecorded;
         await _trackingService.DisposeAsync();

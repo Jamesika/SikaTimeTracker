@@ -35,6 +35,8 @@ public sealed class ActivityTrackingServiceTests
         var start = DateTimeOffset.UtcNow;
         var fixture = await TrackingFixture.CreateAsync(start);
         await using var tracker = fixture.Tracker;
+        TrackingStatus? latestStatus = null;
+        tracker.StatusChanged += (_, status) => latestStatus = status;
         for (var minute = 1; minute <= 5; minute++)
         {
             fixture.System.IdleDuration = TimeSpan.FromMinutes(minute);
@@ -44,6 +46,21 @@ public sealed class ActivityTrackingServiceTests
         Assert.HasCount(1, fixture.Store.Activities);
         Assert.AreEqual(start.AddMinutes(5), fixture.Store.Activities[0].EndTimeUtc);
         Assert.IsTrue(tracker.Status.IsIdle);
+        Assert.AreEqual("AFK", tracker.Status.StatusText);
+        Assert.AreEqual("AFK", latestStatus?.StatusText);
+    }
+
+    [TestMethod]
+    public async Task TrackingStatus_ReportsCurrentProgramAndSegmentStart()
+    {
+        var start = DateTimeOffset.UtcNow;
+        var fixture = await TrackingFixture.CreateAsync(start);
+        await using var tracker = fixture.Tracker;
+
+        Assert.IsTrue(tracker.Status.IsTracking);
+        Assert.AreEqual("正在追踪", tracker.Status.StatusText);
+        Assert.AreEqual("Code", tracker.Status.CurrentWindow?.ProcessName);
+        Assert.AreEqual(start, tracker.Status.CurrentActivityStartedAtUtc);
     }
 
     [TestMethod]
@@ -103,6 +120,9 @@ public sealed class ActivityTrackingServiceTests
         await using var tracker = fixture.Tracker;
 
         Assert.HasCount(0, fixture.Store.Activities);
+        Assert.IsFalse(tracker.Status.IsTracking);
+        Assert.AreEqual("运行正常", tracker.Status.StatusText);
+        Assert.AreEqual(processName, tracker.Status.ForegroundWindow?.ProcessName);
     }
 
     private sealed class TrackingFixture

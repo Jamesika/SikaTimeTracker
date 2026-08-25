@@ -2,7 +2,13 @@
     x:Class="SikaTimeTracker.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid>
+    <Grid x:Name="RootLayout">
+        <Grid.Resources>
+            <SolidColorBrush x:Key="TrackingActiveBrush" Color="#2EA043" />
+            <SolidColorBrush x:Key="TrackingAfkBrush" Color="#D13438" />
+            <SolidColorBrush x:Key="TrackingInactiveBrush" Color="#8A8886" />
+            <SolidColorBrush x:Key="TrackingReadyBrush" Color="#0078D4" />
+        </Grid.Resources>
         <NavigationView
             x:Name="RootNavigation"
             IsBackButtonVisible="Collapsed"
@@ -19,10 +25,27 @@
                 <StackPanel Margin="8,12" Spacing="4">
                     <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="追踪状态" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Ellipse x:Name="StatusIndicator" Width="8" Height="8" Fill="{ThemeResource SystemFillColorSuccessBrush}" />
+                        <Ellipse x:Name="StatusIndicator" Width="8" Height="8" Fill="{StaticResource TrackingReadyBrush}" />
                         <TextBlock x:Name="StatusText" Text="正在启动" />
                     </StackPanel>
-                    <Button x:Name="PauseButton" Margin="0,8,0,0" Click="OnPauseClicked" Content="暂停追踪" />
+                    <StackPanel Margin="16,2,0,0" Spacing="2">
+                        <TextBlock
+                            x:Name="TrackedProcessText"
+                            MaxWidth="190"
+                            FontWeight="SemiBold"
+                            Text="正在初始化"
+                            TextTrimming="CharacterEllipsis" />
+                        <TextBlock
+                            x:Name="TrackedWindowText"
+                            MaxWidth="190"
+                            FontSize="11"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextTrimming="CharacterEllipsis" />
+                        <TextBlock
+                            x:Name="TrackingDurationText"
+                            FontSize="12"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
                 </StackPanel>
             </NavigationView.PaneFooter>
             <Grid x:Name="ContentHost" />

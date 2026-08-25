@@ -92,7 +92,7 @@ public partial class App : Application
         _mainWindow = mainWindow;
         _window = mainWindow;
         mainWindow.Activate();
-        _trayIconService = new TrayIconService(mainWindow, _trackingService);
+        _trayIconService = new TrayIconService(mainWindow);
         mainWindow.Exiting += (_, _) =>
         {
             _trayIconService?.Dispose();

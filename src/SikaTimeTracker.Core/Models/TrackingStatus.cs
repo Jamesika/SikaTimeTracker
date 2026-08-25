@@ -6,4 +6,6 @@ public sealed record TrackingStatus(
     bool IsIdle,
     bool IsSystemInteractive,
     string StatusText,
-    WindowSnapshot? CurrentWindow = null);
+    WindowSnapshot? CurrentWindow = null,
+    DateTimeOffset? CurrentActivityStartedAtUtc = null,
+    WindowSnapshot? ForegroundWindow = null);

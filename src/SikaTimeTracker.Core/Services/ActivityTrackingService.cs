@@ -19,6 +19,7 @@ public sealed class ActivityTrackingService : IAsyncDisposable
     private Task? _healthLoop;
     private long? _currentActivityId;
     private WindowSnapshot? _currentWindow;
+    private WindowSnapshot? _foregroundWindow;
     private DateTimeOffset _currentStartUtc;
     private DateTimeOffset _lastHeartbeatUtc;
     private DateTimeOffset _lastHealthCheckUtc;
@@ -147,6 +148,7 @@ public sealed class ActivityTrackingService : IAsyncDisposable
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            _foregroundWindow = snapshot;
             if (!_isStarted || _isPaused || _isIdle || !_isSystemInteractive)
             {
                 return;
@@ -230,6 +232,8 @@ public sealed class ActivityTrackingService : IAsyncDisposable
                 return;
             }
 
+            var snapshot = _windowSource.GetCurrentWindow();
+            _foregroundWindow = snapshot;
             var idleDuration = _options.IdleDetectionEnabled
                 ? _systemSource.GetIdleDuration()
                 : TimeSpan.Zero;
@@ -242,18 +246,14 @@ public sealed class ActivityTrackingService : IAsyncDisposable
                     var idleBoundary = nowUtc - idleDuration + _options.IdleThreshold;
                     await StopCurrentActivityAsync(idleBoundary, cancellationToken);
                 }
-
-                return;
             }
-
-            if (_isIdle)
+            else if (_isIdle)
             {
                 _isIdle = false;
-                await StartWindowAsync(_windowSource.GetCurrentWindow(), nowUtc, cancellationToken);
+                await StartWindowAsync(snapshot, nowUtc, cancellationToken);
             }
             else
             {
-                var snapshot = _windowSource.GetCurrentWindow();
                 if (_currentWindow is null
                     || snapshot is null
                     || !_currentWindow.RepresentsSameActivity(snapshot))
@@ -338,6 +338,7 @@ public sealed class ActivityTrackingService : IAsyncDisposable
         DateTimeOffset startUtc,
         CancellationToken cancellationToken)
     {
+        _foregroundWindow = snapshot;
         if (snapshot is null
             || _currentActivityId.HasValue
             || ProcessExclusionPolicy.ShouldExclude(snapshot.ProcessName))
@@ -428,21 +429,26 @@ public sealed class ActivityTrackingService : IAsyncDisposable
     private TrackingStatus CreateStatus()
     {
         var statusText = !_isSystemInteractive
-            ? "电脑已锁定或休眠"
+            ? "锁屏或休眠"
             : _isPaused
-                ? "已暂停"
+                ? "正在应用设置"
                 : _isIdle
-                    ? "空闲中"
+                    ? "AFK"
                     : _currentActivityId.HasValue
                         ? "正在追踪"
-                        : "等待活动窗口";
+                        : _foregroundWindow is not null
+                          && ProcessExclusionPolicy.ShouldExclude(_foregroundWindow.ProcessName)
+                            ? "运行正常"
+                            : "等待活动窗口";
         return new TrackingStatus(
             _currentActivityId.HasValue,
             _isPaused,
             _isIdle,
             _isSystemInteractive,
             statusText,
-            _currentWindow);
+            _currentWindow,
+            _currentActivityId.HasValue ? _currentStartUtc : null,
+            _foregroundWindow);
     }
 
     private void RaiseStatusChanged()
