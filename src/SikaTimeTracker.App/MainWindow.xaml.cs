@@ -15,6 +15,7 @@ public sealed partial class MainWindow : Window
     private const uint WindowMessageSetIcon = 0x0080;
     private const nuint SmallIcon = 0;
     private const nuint BigIcon = 1;
+    private const string WindowIconResourceName = "SikaTimeTracker.Assets.SikaTimeTracker.ico";
     private readonly ActivityTrackingService _trackingService;
     private readonly IActivityStore _activityStore;
     private readonly ApplicationSettingsService _settingsService;
@@ -357,12 +358,36 @@ public sealed partial class MainWindow : Window
 
     private void ApplyWindowIcon()
     {
-        if (string.IsNullOrWhiteSpace(Environment.ProcessPath))
+        _windowIcon?.Dispose();
+        _windowIcon = null;
+        string? iconPath = null;
+        try
         {
-            return;
+            Directory.CreateDirectory(_dataDirectory);
+            iconPath = Path.Combine(_dataDirectory, "SikaTimeTracker.ico");
+            using var iconResource = typeof(MainWindow).Assembly.GetManifestResourceStream(
+                WindowIconResourceName);
+            if (iconResource is not null
+                && (!File.Exists(iconPath) || new FileInfo(iconPath).Length != iconResource.Length))
+            {
+                using var iconFile = new FileStream(iconPath, FileMode.Create, FileAccess.Write, FileShare.Read);
+                iconResource.CopyTo(iconFile);
+            }
+
+            if (File.Exists(iconPath))
+            {
+                AppWindow.SetIcon(iconPath);
+                _windowIcon = new System.Drawing.Icon(iconPath);
+            }
+        }
+        catch
+        {
+            iconPath = null;
         }
 
-        _windowIcon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath);
+        _windowIcon ??= string.IsNullOrWhiteSpace(Environment.ProcessPath)
+            ? null
+            : System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath);
         if (_windowIcon is null)
         {
             return;

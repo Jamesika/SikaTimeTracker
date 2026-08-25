@@ -196,15 +196,15 @@ public sealed partial class ActivityView : UserControl
         var weekCount = ((lastDate.DayNumber - gridStart.DayNumber) / 7) + 1;
         var viewportWidth = Math.Max(0, HeatmapScrollViewer.ActualWidth - 14);
         var minimumWidth = weekCount * MinimumHeatmapCellSize + (weekCount - 1) * HeatmapCellSpacing;
-        var cellSize = viewportWidth > minimumWidth
-            ? (viewportWidth - (weekCount - 1) * HeatmapCellSpacing) / weekCount
-            : MinimumHeatmapCellSize;
-        var totalWidth = weekCount * cellSize + (weekCount - 1) * HeatmapCellSpacing;
+        var heatmapScale = viewportWidth > minimumWidth ? viewportWidth / minimumWidth : 1;
+        var cellSize = MinimumHeatmapCellSize * heatmapScale;
+        var cellSpacing = HeatmapCellSpacing * heatmapScale;
+        var totalWidth = weekCount * cellSize + (weekCount - 1) * cellSpacing;
         HeatmapGrid.Width = totalWidth;
-        HeatmapGrid.ColumnSpacing = HeatmapCellSpacing;
-        HeatmapGrid.RowSpacing = HeatmapCellSpacing;
+        HeatmapGrid.ColumnSpacing = cellSpacing;
+        HeatmapGrid.RowSpacing = cellSpacing;
         MonthHeaderGrid.Width = totalWidth;
-        MonthHeaderGrid.ColumnSpacing = HeatmapCellSpacing;
+        MonthHeaderGrid.ColumnSpacing = cellSpacing;
         for (var week = 0; week < weekCount; week++)
         {
             HeatmapGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(cellSize) });
@@ -225,10 +225,10 @@ public sealed partial class ActivityView : UserControl
             currentWeekMarker = new Border
             {
                 BorderBrush = new SolidColorBrush(
-                    Windows.UI.Color.FromArgb(150, byte.MaxValue, byte.MaxValue, byte.MaxValue)),
+                    Windows.UI.Color.FromArgb(77, byte.MaxValue, byte.MaxValue, byte.MaxValue)),
                 BorderThickness = new Thickness(1.5),
                 CornerRadius = new CornerRadius(4),
-                Margin = new Thickness(-2),
+                Margin = new Thickness(-2, -2, -2, 0),
                 IsHitTestVisible = false
             };
             Grid.SetColumn(currentWeekMarker, currentWeek);
@@ -458,7 +458,6 @@ public sealed partial class ActivityView : UserControl
                 Background = item.CategoryBrush,
                 BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(60, 0, 0, 0)),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(4),
                 Child = label,
                 Tag = item
             };

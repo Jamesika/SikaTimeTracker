@@ -24,6 +24,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Assets\SikaTimeTracker.ico" LogicalName="SikaTimeTracker.Assets.SikaTimeTracker.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\SikaTimeTracker.Core\SikaTimeTracker.Core.csproj" />
     <ProjectReference Include="..\SikaTimeTracker.Infrastructure\SikaTimeTracker.Infrastructure.csproj" />
   </ItemGroup>
