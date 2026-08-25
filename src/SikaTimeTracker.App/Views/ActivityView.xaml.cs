@@ -218,13 +218,15 @@ public sealed partial class ActivityView : UserControl
 
         var localToday = DateOnly.FromDateTime(
             TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, _timeZone).DateTime);
+        Border? currentWeekMarker = null;
         if (localToday >= firstDate && localToday <= lastDate)
         {
             var currentWeek = (localToday.DayNumber - gridStart.DayNumber) / 7;
-            var currentWeekMarker = new Border
+            currentWeekMarker = new Border
             {
-                Background = new SolidColorBrush(
-                    Windows.UI.Color.FromArgb(42, byte.MaxValue, byte.MaxValue, byte.MaxValue)),
+                BorderBrush = new SolidColorBrush(
+                    Windows.UI.Color.FromArgb(150, byte.MaxValue, byte.MaxValue, byte.MaxValue)),
+                BorderThickness = new Thickness(1.5),
                 CornerRadius = new CornerRadius(4),
                 Margin = new Thickness(-2),
                 IsHitTestVisible = false
@@ -232,7 +234,6 @@ public sealed partial class ActivityView : UserControl
             Grid.SetColumn(currentWeekMarker, currentWeek);
             Grid.SetRow(currentWeekMarker, 0);
             Grid.SetRowSpan(currentWeekMarker, 7);
-            HeatmapGrid.Children.Add(currentWeekMarker);
         }
 
         var totalsByDate = _dailyTotals.ToDictionary(item => item.Date, item => item.Duration);
@@ -270,6 +271,11 @@ public sealed partial class ActivityView : UserControl
             Grid.SetColumn(button, week);
             Grid.SetRow(button, day);
             HeatmapGrid.Children.Add(button);
+        }
+
+        if (currentWeekMarker is not null)
+        {
+            HeatmapGrid.Children.Add(currentWeekMarker);
         }
 
         for (var month = 1; month <= 12; month++)
