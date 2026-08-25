@@ -97,9 +97,35 @@ public sealed partial class RulesView : UserControl
         }
 
         await _store.SaveCategoryAsync(category);
-        await _trackingService.ReloadRulesAsync();
+        var changed = 0;
+        if (category.SortOrder != item.Category.SortOrder)
+        {
+            var categoryRules = _rules
+                .Where(rule => rule.CategoryId == category.Id)
+                .OrderByDescending(rule => rule.Priority)
+                .ThenBy(rule => rule.Id)
+                .ToArray();
+            for (var index = 0; index < categoryRules.Length; index++)
+            {
+                await _store.SaveRuleAsync(categoryRules[index] with
+                {
+                    Priority = GetRulePriority(category, index)
+                });
+            }
+
+            changed = await ReloadRulesAndReclassifyHistoryAsync();
+        }
+        else
+        {
+            await _trackingService.ReloadRulesAsync();
+        }
+
         await ReloadAsync();
-        ShowMessage("分类已更新", InfoBarSeverity.Success);
+        ShowMessage(
+            category.SortOrder != item.Category.SortOrder
+                ? $"分类已更新，并自动更新 {changed} 条历史记录"
+                : "分类已更新",
+            InfoBarSeverity.Success);
     }
 
     private async void OnEditCategoryRulesClicked(object sender, RoutedEventArgs args)
@@ -172,9 +198,7 @@ public sealed partial class RulesView : UserControl
                 await _store.SaveRuleAsync(CreateRegexRule(item.Category, patterns[index], index));
             }
 
-            await _trackingService.ReloadRulesAsync();
-            var changed = await new HistoricalReclassificationService(_store, _classificationEngine)
-                .ReclassifyAsync();
+            var changed = await ReloadRulesAndReclassifyHistoryAsync();
             await ReloadAsync();
             ShowMessage($"正则列表已保存，并更新 {changed} 条历史记录", InfoBarSeverity.Success);
         }
@@ -212,28 +236,6 @@ public sealed partial class RulesView : UserControl
         catch (Exception exception)
         {
             ShowMessage($"删除失败：{exception.Message}", InfoBarSeverity.Error);
-        }
-    }
-
-    private async void OnReclassifyClicked(object sender, RoutedEventArgs args)
-    {
-        if (!await ConfirmAsync(
-                "重新分类历史记录",
-                "将使用所有分类的当前正则列表重新处理历史活动；手动批量修改过的程序不会被覆盖。"))
-        {
-            return;
-        }
-
-        SetBusy(true);
-        try
-        {
-            var changed = await new HistoricalReclassificationService(_store, _classificationEngine)
-                .ReclassifyAsync();
-            ShowMessage($"重新分类完成，共更新 {changed} 条记录", InfoBarSeverity.Success);
-        }
-        finally
-        {
-            SetBusy(false);
         }
     }
 
@@ -296,8 +298,20 @@ public sealed partial class RulesView : UserControl
             RuleMatchType.RegularExpression,
             pattern,
             IgnoreCase: true,
-            Priority: 1_000_000 - category.SortOrder * 1_000 - index,
+            Priority: GetRulePriority(category, index),
             IsEnabled: true);
+    }
+
+    private async Task<int> ReloadRulesAndReclassifyHistoryAsync()
+    {
+        await _trackingService.ReloadRulesAsync();
+        return await new HistoricalReclassificationService(_store, _classificationEngine)
+            .ReclassifyAsync();
+    }
+
+    private static int GetRulePriority(Category category, int index)
+    {
+        return 1_000_000 - category.SortOrder * 1_000 - index;
     }
 
     private static IReadOnlyList<string> ParsePatterns(string text)

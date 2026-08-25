@@ -11,7 +11,6 @@
                         <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="为每个分类维护一组正则表达式，自动匹配进程名称或窗口标题" />
                     </StackPanel>
                     <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
-                        <Button Click="OnReclassifyClicked" Content="重新分类历史记录" />
                         <Button Click="OnNewCategoryClicked" Style="{StaticResource AccentButtonStyle}" Content="新建分类" />
                     </StackPanel>
                 </Grid>

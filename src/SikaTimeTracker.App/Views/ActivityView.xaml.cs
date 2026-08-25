@@ -408,7 +408,9 @@ public sealed partial class ActivityView : UserControl
         EmptyTimeline.Visibility = _timelineItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ActivityDetailsHeader.Visibility = _timelineItems.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         TimelineList.Visibility = _timelineItems.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-        TimelineList.ItemsSource = _timelineItems;
+        TimelineList.ItemsSource = _timelineItems
+            .OrderByDescending(item => item.Activity.StartLocal)
+            .ToArray();
         RenderTimelineCanvas();
     }
 
