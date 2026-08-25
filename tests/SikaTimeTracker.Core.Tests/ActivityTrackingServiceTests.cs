@@ -324,6 +324,34 @@ public sealed class ActivityTrackingServiceTests
             }));
         }
 
+        public Task<int> UpdateActivitiesClassificationByProcessAsync(
+            string processName,
+            long categoryId,
+            long? ruleId,
+            bool isManual,
+            CancellationToken cancellationToken = default)
+        {
+            var updated = 0;
+            for (var index = 0; index < Activities.Count; index++)
+            {
+                var activity = Activities[index];
+                if (!string.Equals(activity.ProcessName, processName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                Activities[index] = activity with
+                {
+                    CategoryId = categoryId,
+                    ClassificationRuleId = ruleId,
+                    IsManuallyClassified = isManual
+                };
+                updated++;
+            }
+
+            return Task.FromResult(updated);
+        }
+
         public Task<string?> GetSettingAsync(string key, CancellationToken cancellationToken = default)
         {
             return Task.FromResult<string?>(null);

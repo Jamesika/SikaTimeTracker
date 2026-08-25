@@ -83,8 +83,8 @@ public sealed class ActivityStatisticsServiceTests
     }
 
     [TestMethod]
-    [DataRow(29, "Code", false)]
-    [DataRow(30, "Code", true)]
+    [DataRow(14, "Code", false)]
+    [DataRow(15, "Code", true)]
     [DataRow(60, "explorer.exe", false)]
     public void ActivityDisplayPolicy_AppliesMinimumDurationAndProcessExclusions(
         int durationSeconds,
@@ -105,7 +105,7 @@ public sealed class ActivityStatisticsServiceTests
 
         Assert.AreEqual(
             expected,
-            ActivityDisplayPolicy.ShouldDisplay(activity, TimeSpan.FromSeconds(30)));
+            ActivityDisplayPolicy.ShouldDisplay(activity, TimeSpan.FromSeconds(15)));
     }
 
     private static ActivitySegment Segment(

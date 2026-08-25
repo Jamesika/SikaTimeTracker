@@ -8,11 +8,11 @@
                 <Grid>
                     <StackPanel Spacing="4">
                         <TextBlock Style="{StaticResource PageTitleStyle}" Text="分类规则" />
-                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="按优先级使用窗口标题或进程名称自动整理活动" />
+                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="为每个分类维护一组正则表达式，自动匹配进程名称或窗口标题" />
                     </StackPanel>
-                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8">
+                    <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
                         <Button Click="OnReclassifyClicked" Content="重新分类历史记录" />
-                        <Button Click="OnNewRuleClicked" Style="{StaticResource AccentButtonStyle}" Content="新建规则" />
+                        <Button Click="OnNewCategoryClicked" Style="{StaticResource AccentButtonStyle}" Content="新建分类" />
                     </StackPanel>
                 </Grid>
 
@@ -22,80 +22,54 @@
                     IsOpen="False"
                     Severity="Informational" />
 
-                <Border Style="{StaticResource CardStyle}">
-                    <StackPanel Spacing="14">
-                        <Grid>
-                            <TextBlock Style="{StaticResource SectionTitleStyle}" Text="分类" />
-                            <Button HorizontalAlignment="Right" Click="OnNewCategoryClicked" Content="新建分类" />
-                        </Grid>
-                        <ListView
-                            x:Name="CategoryList"
-                            IsItemClickEnabled="True"
-                            ItemClick="OnCategoryItemClicked"
-                            SelectionMode="None">
-                            <ListView.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Padding="4,8" ColumnSpacing="12">
+                <TextBlock
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="每行填写一个正则，例如 unity、rider、code、visual studio。分类排序靠前时，其规则优先匹配。"
+                    TextWrapping="Wrap" />
+
+                <ListView x:Name="CategoryRuleList" SelectionMode="None">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Border Margin="0,0,0,12" Style="{StaticResource CardStyle}">
+                                <StackPanel Spacing="14">
+                                    <Grid ColumnSpacing="12">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <Ellipse Width="12" Height="12" VerticalAlignment="Center" Fill="{Binding ColorBrush}" />
-                                        <StackPanel Grid.Column="1">
-                                            <TextBlock FontWeight="SemiBold" Text="{Binding Name}" />
+                                        <Ellipse Width="14" Height="14" VerticalAlignment="Center" Fill="{Binding ColorBrush}" />
+                                        <StackPanel Grid.Column="1" Spacing="2">
+                                            <TextBlock FontSize="18" FontWeight="SemiBold" Text="{Binding Name}" />
                                             <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding Description}" />
                                         </StackPanel>
-                                        <Button Grid.Column="2" Click="OnDeleteCategoryClicked" Tag="{Binding}" ToolTipService.ToolTip="删除分类">
-                                            <FontIcon Glyph="&#xE74D;" />
-                                        </Button>
-                                    </Grid>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
-                    </StackPanel>
-                </Border>
-
-                <Border Style="{StaticResource CardStyle}">
-                    <StackPanel Spacing="14">
-                        <TextBlock Style="{StaticResource SectionTitleStyle}" Text="匹配规则" />
-                        <ListView x:Name="RuleList" SelectionMode="None">
-                            <ListView.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Padding="4,10" ColumnSpacing="12">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="5" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <Border Background="{Binding ColorBrush}" CornerRadius="3" />
-                                        <StackPanel Grid.Column="1" Spacing="3">
-                                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <TextBlock FontWeight="SemiBold" Text="{Binding CategoryName}" />
-                                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding EnabledText}" />
-                                                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding PriorityText}" />
-                                            </StackPanel>
-                                            <TextBlock Text="{Binding Pattern}" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding MatchDescription}" />
-                                        </StackPanel>
                                         <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
-                                            <Button Click="OnEditRuleClicked" Tag="{Binding}" ToolTipService.ToolTip="编辑规则">
+                                            <Button Click="OnEditCategoryRulesClicked" Content="编辑正则列表" Tag="{Binding}" />
+                                            <Button Click="OnEditCategoryClicked" Tag="{Binding}" ToolTipService.ToolTip="编辑分类">
                                                 <FontIcon Glyph="&#xE70F;" />
                                             </Button>
-                                            <Button Click="OnDeleteRuleClicked" Tag="{Binding}" ToolTipService.ToolTip="删除规则">
+                                            <Button Click="OnDeleteCategoryClicked" IsEnabled="{Binding CanDelete}" Tag="{Binding}" ToolTipService.ToolTip="删除分类">
                                                 <FontIcon Glyph="&#xE74D;" />
                                             </Button>
                                         </StackPanel>
                                     </Grid>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
-                        <StackPanel x:Name="EmptyRules" HorizontalAlignment="Center" Spacing="10">
-                            <FontIcon Glyph="&#xE8FD;" FontSize="30" />
-                            <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="尚未创建自定义规则" />
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
+                                    <Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                                    <TextBlock FontWeight="SemiBold" Text="正则列表" />
+                                    <ItemsControl ItemsSource="{Binding Patterns}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Margin="0,0,0,6" Padding="10,7" Background="{ThemeResource SubtleFillColorSecondaryBrush}" CornerRadius="5">
+                                                    <TextBlock FontFamily="Cascadia Mono" Text="{Binding}" TextWrapping="Wrap" />
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding EmptyText}" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
             </StackPanel>
         </ScrollViewer>
         <ProgressRing x:Name="BusyIndicator" Width="36" Height="36" IsActive="False" Visibility="Collapsed" />

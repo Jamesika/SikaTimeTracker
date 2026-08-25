@@ -176,6 +176,7 @@ public sealed partial class MainWindow : Window
                 ApplyPreferences),
             _ => new ActivityView(
                 _activityStore,
+                _trackingService,
                 TimeSpan.FromSeconds(_preferences.MinimumActivitySeconds))
         };
         _currentTag = tag;

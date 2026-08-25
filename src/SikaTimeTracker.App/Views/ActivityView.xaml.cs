@@ -16,6 +16,7 @@ public sealed partial class ActivityView : UserControl
     private const double HeatmapCellSpacing = 3;
     private const double MinimumTimelinePixelsPerHour = 48;
     private readonly IActivityStore _store;
+    private readonly ActivityTrackingService _trackingService;
     private readonly TimeSpan _minimumActivityDuration;
     private readonly ActivityStatisticsService _statistics = new();
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.Local;
@@ -34,7 +35,10 @@ public sealed partial class ActivityView : UserControl
     private double _lastHeatmapViewportWidth;
     private double _lastTimelineViewportWidth;
 
-    public ActivityView(IActivityStore store, TimeSpan minimumActivityDuration)
+    public ActivityView(
+        IActivityStore store,
+        ActivityTrackingService trackingService,
+        TimeSpan minimumActivityDuration)
     {
         if (minimumActivityDuration < TimeSpan.Zero)
         {
@@ -42,6 +46,7 @@ public sealed partial class ActivityView : UserControl
         }
 
         _store = store;
+        _trackingService = trackingService;
         _minimumActivityDuration = minimumActivityDuration;
         InitializeComponent();
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
@@ -559,6 +564,12 @@ public sealed partial class ActivityView : UserControl
         details.Children.Add(new TextBlock { Text = item.TimeText + " · " + item.DurationText });
         details.Children.Add(new TextBlock { Text = item.Activity.ProcessName, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         details.Children.Add(new TextBlock { Text = item.Activity.WindowTitle, TextWrapping = TextWrapping.Wrap });
+        details.Children.Add(new TextBlock
+        {
+            Text = "修改后会更新这个程序的全部历史记录，并为后续活动建立自动分类规则。",
+            Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray),
+            TextWrapping = TextWrapping.Wrap
+        });
         var categoryBox = new ComboBox
         {
             Header = "手动分类",
@@ -573,19 +584,19 @@ public sealed partial class ActivityView : UserControl
             XamlRoot = XamlRoot,
             Title = "活动详情",
             Content = details,
-            PrimaryButtonText = "保存分类",
+            PrimaryButtonText = "应用到该程序全部记录",
             CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Primary
         };
         if (await dialog.ShowAsync() == ContentDialogResult.Primary
             && categoryBox.SelectedItem is Category category)
         {
-            await _store.UpdateActivityClassificationAsync(
-                item.Activity.ActivityId,
-                category.Id,
-                ruleId: null,
-                isManual: true);
+            var changed = await new ProgramClassificationService(_store).AssignCategoryAsync(
+                item.Activity.ProcessName,
+                category.Id);
+            await _trackingService.ReloadRulesAsync();
             await RefreshAsync();
+            TimelineSummaryText.Text += $" · 已更新该程序 {changed} 条记录";
         }
     }
 

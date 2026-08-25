@@ -157,13 +157,47 @@ public sealed class SqliteActivityStoreTests
     }
 
     [TestMethod]
-    public async Task DefaultPreferences_UseThirtySecondMinimumActivity()
+    public async Task DefaultPreferences_UseFifteenSecondMinimumActivity()
     {
         var settings = new ApplicationSettingsService(_store);
 
         var preferences = await settings.LoadAsync();
 
-        Assert.AreEqual(30, preferences.MinimumActivitySeconds);
+        Assert.AreEqual(15, preferences.MinimumActivitySeconds);
+    }
+
+    [TestMethod]
+    public async Task BulkClassification_UpdatesEveryActivityForSameProcess()
+    {
+        var start = new DateTimeOffset(2026, 8, 25, 8, 0, 0, TimeSpan.Zero);
+        foreach (var draft in new[]
+                 {
+                     new ActivityDraft(start, "Code", "First", 1),
+                     new ActivityDraft(start.AddMinutes(2), "code", "Second", 1),
+                     new ActivityDraft(start.AddMinutes(4), "Rider", "Other", 1)
+                 })
+        {
+            var id = await _store.StartActivityAsync(draft);
+            await _store.StopActivityAsync(id, draft.StartTimeUtc.AddMinutes(1));
+        }
+
+        var changed = await new ProgramClassificationService(_store)
+            .AssignCategoryAsync("Code", categoryId: 2);
+        var activities = await _store.GetAllActivitiesAsync();
+        var rules = await _store.GetRulesAsync();
+        var programRule = rules.Single(rule => rule.Target == RuleTarget.ProcessName
+                                               && rule.Pattern == "^Code$");
+
+        Assert.AreEqual(2, changed);
+        Assert.IsTrue(activities
+            .Where(activity => activity.ProcessName.Equals("Code", StringComparison.OrdinalIgnoreCase))
+            .All(activity => activity.CategoryId == 2
+                             && activity.ClassificationRuleId == programRule.Id
+                             && activity.IsManuallyClassified));
+        Assert.AreEqual(1, activities.Single(activity => activity.ProcessName == "Rider").CategoryId);
+        Assert.AreEqual(
+            2,
+            new ClassificationEngine().Classify("code", "Future", rules, defaultCategoryId: 1).CategoryId);
     }
 
     [TestMethod]

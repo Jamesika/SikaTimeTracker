@@ -49,6 +49,13 @@ public interface IActivityStore
         bool isManual,
         CancellationToken cancellationToken = default);
 
+    Task<int> UpdateActivitiesClassificationByProcessAsync(
+        string processName,
+        long categoryId,
+        long? ruleId,
+        bool isManual,
+        CancellationToken cancellationToken = default);
+
     Task<string?> GetSettingAsync(string key, CancellationToken cancellationToken = default);
 
     Task SetSettingAsync(string key, string value, CancellationToken cancellationToken = default);

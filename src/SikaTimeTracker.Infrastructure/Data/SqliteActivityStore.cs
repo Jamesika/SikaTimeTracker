@@ -489,6 +489,30 @@ public sealed class SqliteActivityStore : IActivityStore
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
+    public async Task<int> UpdateActivitiesClassificationByProcessAsync(
+        string processName,
+        long categoryId,
+        long? ruleId,
+        bool isManual,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(processName);
+        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE ActivitySegments
+            SET CategoryId = $categoryId,
+                ClassificationRuleId = $ruleId,
+                IsManuallyClassified = $isManual
+            WHERE ProcessName = $processName COLLATE NOCASE;
+            """;
+        AddParameter(command, "$categoryId", categoryId);
+        AddParameter(command, "$ruleId", ruleId);
+        AddParameter(command, "$isManual", isManual);
+        AddParameter(command, "$processName", processName);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<string?> GetSettingAsync(string key, CancellationToken cancellationToken = default)
     {
         await using var connection = await OpenConnectionAsync(cancellationToken);
