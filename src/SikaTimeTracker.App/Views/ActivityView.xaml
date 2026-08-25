@@ -2,7 +2,7 @@
     x:Class="SikaTimeTracker.Views.ActivityView"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid>
+    <Grid x:Name="ActivityRoot">
         <ScrollViewer>
             <StackPanel Padding="32,24,32,40" Spacing="20">
                 <Grid ColumnSpacing="16">
@@ -152,5 +152,23 @@
         </ScrollViewer>
 
         <ProgressRing x:Name="LoadingIndicator" Width="36" Height="36" IsActive="False" />
+
+        <Canvas IsHitTestVisible="False">
+            <Border
+                x:Name="FastToolTipOverlay"
+                Canvas.ZIndex="1000"
+                MaxWidth="360"
+                Padding="10,7"
+                Background="#F2292929"
+                BorderBrush="#33FFFFFF"
+                BorderThickness="1"
+                CornerRadius="4"
+                Visibility="Collapsed">
+                <TextBlock
+                    x:Name="FastToolTipText"
+                    Foreground="White"
+                    TextWrapping="Wrap" />
+            </Border>
+        </Canvas>
     </Grid>
 </UserControl>

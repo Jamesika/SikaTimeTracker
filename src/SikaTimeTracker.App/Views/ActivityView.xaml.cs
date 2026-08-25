@@ -13,6 +13,8 @@ namespace SikaTimeTracker.Views;
 
 public sealed partial class ActivityView : UserControl
 {
+    private const string SelectedCategorySettingKey = "ActivitySelectedCategoryId";
+    private const string AllCategoriesSettingValue = "All";
     private const double MinimumHeatmapCellSize = 13;
     private const double HeatmapCellSpacing = 3;
     private const double MinimumTimelinePixelsPerHour = 48;
@@ -22,6 +24,7 @@ public sealed partial class ActivityView : UserControl
     private readonly ActivityStatisticsService _statistics = new();
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.Local;
     private readonly DispatcherTimer _refreshTimer;
+    private readonly DispatcherTimer _fastToolTipTimer;
     private IReadOnlyList<Category> _categories = [];
     private IReadOnlyList<ActivitySegment> _activities = [];
     private IReadOnlyList<DailyActivityTotal> _dailyTotals = [];
@@ -33,8 +36,10 @@ public sealed partial class ActivityView : UserControl
     private bool _isHostActive;
     private bool _isRefreshing;
     private bool _refreshPending;
+    private bool _isRestoringCategoryFilter;
     private double _lastHeatmapViewportWidth;
     private double _lastTimelineViewportWidth;
+    private FrameworkElement? _pendingFastToolTipTarget;
 
     public ActivityView(
         IActivityStore store,
@@ -52,6 +57,8 @@ public sealed partial class ActivityView : UserControl
         InitializeComponent();
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
         _refreshTimer.Tick += OnRefreshTimerTick;
+        _fastToolTipTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+        _fastToolTipTimer.Tick += OnFastToolTipTimerTick;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
     }
@@ -77,6 +84,7 @@ public sealed partial class ActivityView : UserControl
     private void OnUnloaded(object sender, RoutedEventArgs args)
     {
         _isControlLoaded = false;
+        HideFastToolTip();
         UpdateAutoRefreshState();
     }
 
@@ -119,6 +127,57 @@ public sealed partial class ActivityView : UserControl
         RequestRefresh();
     }
 
+    private void OnFastToolTipTimerTick(object? sender, object args)
+    {
+        _fastToolTipTimer.Stop();
+        if (_pendingFastToolTipTarget is not null)
+        {
+            ShowFastToolTip(_pendingFastToolTipTarget);
+        }
+    }
+
+    private void QueueFastToolTip(FrameworkElement target, string text)
+    {
+        HideFastToolTip();
+        _pendingFastToolTipTarget = target;
+        FastToolTipText.Text = text;
+        _fastToolTipTimer.Start();
+    }
+
+    private void ShowFastToolTip(FrameworkElement target)
+    {
+        if (!ReferenceEquals(target, _pendingFastToolTipTarget))
+        {
+            return;
+        }
+
+        var origin = target.TransformToVisual(ActivityRoot).TransformPoint(new Windows.Foundation.Point(0, 0));
+        FastToolTipOverlay.Visibility = Visibility.Visible;
+        FastToolTipOverlay.Measure(new Windows.Foundation.Size(double.PositiveInfinity, double.PositiveInfinity));
+        var size = FastToolTipOverlay.DesiredSize;
+        var left = Math.Clamp(origin.X, 8, Math.Max(8, ActivityRoot.ActualWidth - size.Width - 8));
+        var top = origin.Y + target.ActualHeight + 8;
+        if (top + size.Height > ActivityRoot.ActualHeight - 8)
+        {
+            top = Math.Max(8, origin.Y - size.Height - 8);
+        }
+
+        Canvas.SetLeft(FastToolTipOverlay, left);
+        Canvas.SetTop(FastToolTipOverlay, top);
+    }
+
+    private void HideFastToolTip(FrameworkElement? target = null)
+    {
+        if (target is not null && !ReferenceEquals(target, _pendingFastToolTipTarget))
+        {
+            return;
+        }
+
+        _fastToolTipTimer.Stop();
+        FastToolTipOverlay.Visibility = Visibility.Collapsed;
+        _pendingFastToolTipTarget = null;
+    }
+
     private async Task LoadCategoriesAsync()
     {
         _categories = await _store.GetCategoriesAsync();
@@ -127,8 +186,25 @@ public sealed partial class ActivityView : UserControl
             category.Id,
             category.Name,
             category.Color)));
+        var savedValue = await _store.GetSettingAsync(SelectedCategorySettingKey);
+        var hasSavedCategory = long.TryParse(
+            savedValue,
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out var savedCategoryId);
+        var selectedIndex = hasSavedCategory
+            ? filters.FindIndex(filter => filter.Id == savedCategoryId)
+            : 0;
+        if (selectedIndex < 0)
+        {
+            selectedIndex = 0;
+            await _store.SetSettingAsync(SelectedCategorySettingKey, AllCategoriesSettingValue);
+        }
+
+        _isRestoringCategoryFilter = true;
         CategoryFilter.ItemsSource = filters;
-        CategoryFilter.SelectedIndex = 0;
+        CategoryFilter.SelectedIndex = selectedIndex;
+        _isRestoringCategoryFilter = false;
     }
 
     private async Task RefreshAsync()
@@ -185,6 +261,7 @@ public sealed partial class ActivityView : UserControl
 
     private void RenderHeatmap(DateOnly firstDate, DateOnly lastDate)
     {
+        HideFastToolTip();
         HeatmapGrid.Children.Clear();
         HeatmapGrid.ColumnDefinitions.Clear();
         HeatmapGrid.RowDefinitions.Clear();
@@ -218,23 +295,6 @@ public sealed partial class ActivityView : UserControl
 
         var localToday = DateOnly.FromDateTime(
             TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, _timeZone).DateTime);
-        Border? currentWeekMarker = null;
-        if (localToday >= firstDate && localToday <= lastDate)
-        {
-            var currentWeek = (localToday.DayNumber - gridStart.DayNumber) / 7;
-            currentWeekMarker = new Border
-            {
-                BorderBrush = new SolidColorBrush(
-                    Windows.UI.Color.FromArgb(77, byte.MaxValue, byte.MaxValue, byte.MaxValue)),
-                BorderThickness = new Thickness(1.5),
-                CornerRadius = new CornerRadius(4),
-                Margin = new Thickness(-2, -2, -2, 0),
-                IsHitTestVisible = false
-            };
-            Grid.SetColumn(currentWeekMarker, currentWeek);
-            Grid.SetRow(currentWeekMarker, 0);
-            Grid.SetRowSpan(currentWeekMarker, 7);
-        }
 
         var totalsByDate = _dailyTotals.ToDictionary(item => item.Date, item => item.Duration);
         for (var date = firstDate; date <= lastDate; date = date.AddDays(1))
@@ -254,6 +314,7 @@ public sealed partial class ActivityView : UserControl
                 BorderThickness = date == _selectedDate ? new Thickness(2) : new Thickness(0),
                 CornerRadius = new CornerRadius(2),
                 Background = intensityBrush,
+                Opacity = date > localToday ? 0.35 : 1,
                 Tag = date
             };
             button.Resources["ButtonBackground"] = intensityBrush;
@@ -265,17 +326,14 @@ public sealed partial class ActivityView : UserControl
             }
 
             var dayDescription = $"{date:yyyy-MM-dd} · {FormatDuration(duration)}";
-            ToolTipService.SetToolTip(button, dayDescription);
             AutomationProperties.SetName(button, dayDescription);
+            button.PointerEntered += (_, _) => QueueFastToolTip(button, dayDescription);
+            button.PointerExited += (_, _) => HideFastToolTip(button);
+            button.PointerCanceled += (_, _) => HideFastToolTip(button);
             button.Click += OnHeatmapDayClicked;
             Grid.SetColumn(button, week);
             Grid.SetRow(button, day);
             HeatmapGrid.Children.Add(button);
-        }
-
-        if (currentWeekMarker is not null)
-        {
-            HeatmapGrid.Children.Add(currentWeekMarker);
         }
 
         for (var month = 1; month <= 12; month++)
@@ -356,6 +414,7 @@ public sealed partial class ActivityView : UserControl
 
     private void RenderTimelineCanvas()
     {
+        HideFastToolTip();
         TimelineCanvas.Children.Clear();
         if (_timelineItems.Count == 0)
         {
@@ -461,9 +520,11 @@ public sealed partial class ActivityView : UserControl
                 Child = label,
                 Tag = item
             };
-            ToolTipService.SetToolTip(
-                segment,
-                $"{item.ApplicationName}\n{item.Title}\n分类：{item.CategoryName}\n时间：{item.TimeText}\n持续：{item.DurationText}");
+            var segmentDescription = $"{item.ApplicationName}\n{item.Title}\n分类：{item.CategoryName}\n时间：{item.TimeText}\n持续：{item.DurationText}";
+            AutomationProperties.SetName(segment, segmentDescription);
+            segment.PointerEntered += (_, _) => QueueFastToolTip(segment, segmentDescription);
+            segment.PointerExited += (_, _) => HideFastToolTip(segment);
+            segment.PointerCanceled += (_, _) => HideFastToolTip(segment);
             segment.Tapped += OnTimelineSegmentTapped;
             Canvas.SetLeft(segment, left);
             Canvas.SetTop(segment, trackTop + laneAssignments[item.Activity.ActivityId] * laneHeight + 2);
@@ -516,12 +577,19 @@ public sealed partial class ActivityView : UserControl
 
     private async void OnCategoryFilterChanged(object sender, SelectionChangedEventArgs args)
     {
+        if (_isRestoringCategoryFilter || CategoryFilter.SelectedItem is not CategoryFilterItem selectedFilter)
+        {
+            return;
+        }
+
         if (_isLoaded && CategoryFilter.SelectedItem is not null)
         {
             RenderData();
         }
 
-        await Task.CompletedTask;
+        var settingValue = selectedFilter.Id?.ToString(CultureInfo.InvariantCulture)
+            ?? AllCategoriesSettingValue;
+        await _store.SetSettingAsync(SelectedCategorySettingKey, settingValue);
     }
 
     private async void OnPreviousYearClicked(object sender, RoutedEventArgs args)

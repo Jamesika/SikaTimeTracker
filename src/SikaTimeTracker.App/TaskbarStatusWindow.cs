@@ -309,6 +309,7 @@ internal sealed class TaskbarBadgeForm : Forms.Form
         ShowInTaskbar = false;
         StartPosition = Forms.FormStartPosition.Manual;
         TopMost = true;
+        Opacity = RestingOpacity;
         Cursor = Forms.Cursors.Hand;
         AccessibleRole = Forms.AccessibleRole.PushButton;
         BackColor = DarkBackground;
@@ -522,6 +523,12 @@ internal sealed class TaskbarBadgeForm : Forms.Form
 
     private static readonly Color LightPressedBackground = Color.FromArgb(214, 214, 214);
 
+    private const double RestingOpacity = 0.78;
+
+    private const double HoverOpacity = 0.9;
+
+    private const double PressedOpacity = 0.82;
+
     private Color BackgroundColor => (_useLightPalette, _isPressed, _isHovered) switch
     {
         (true, true, _) => LightPressedBackground,
@@ -532,9 +539,17 @@ internal sealed class TaskbarBadgeForm : Forms.Form
         _ => DarkBackground
     };
 
+    private double SurfaceOpacity => (_isPressed, _isHovered) switch
+    {
+        (true, _) => PressedOpacity,
+        (false, true) => HoverOpacity,
+        _ => RestingOpacity
+    };
+
     private void UpdateInteractionAppearance()
     {
         BackColor = BackgroundColor;
+        Opacity = SurfaceOpacity;
         Invalidate();
     }
 }
