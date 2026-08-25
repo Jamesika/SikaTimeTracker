@@ -174,7 +174,9 @@ public sealed partial class MainWindow : Window
                 _preferences,
                 _dataDirectory,
                 ApplyPreferences),
-            _ => new ActivityView(_activityStore)
+            _ => new ActivityView(
+                _activityStore,
+                TimeSpan.FromSeconds(_preferences.MinimumActivitySeconds))
         };
         _currentTag = tag;
         ContentHost.Children.Add(_currentPage);

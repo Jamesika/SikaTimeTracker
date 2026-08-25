@@ -133,7 +133,7 @@ public sealed partial class SettingsView : UserControl
             StartMinimized = StartMinimizedToggle.IsOn,
             IdleDetectionEnabled = IdleDetectionToggle.IsOn,
             IdleThresholdMinutes = GetNumber(IdleMinutesBox, 5),
-            MinimumActivitySeconds = GetNumber(MinimumSecondsBox, 2),
+            MinimumActivitySeconds = GetNumber(MinimumSecondsBox, 30),
             MergeGapSeconds = GetNumber(MergeGapSecondsBox, 10),
             RecordWindowTitles = RecordTitlesToggle.IsOn,
             Theme = (ThemeBox.SelectedItem as ThemeChoice)?.Value ?? AppTheme.System

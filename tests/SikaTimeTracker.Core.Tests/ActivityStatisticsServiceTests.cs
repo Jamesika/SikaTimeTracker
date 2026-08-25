@@ -82,6 +82,32 @@ public sealed class ActivityStatisticsServiceTests
         Assert.AreEqual(0, lanes[3]);
     }
 
+    [TestMethod]
+    [DataRow(29, "Code", false)]
+    [DataRow(30, "Code", true)]
+    [DataRow(60, "explorer.exe", false)]
+    public void ActivityDisplayPolicy_AppliesMinimumDurationAndProcessExclusions(
+        int durationSeconds,
+        string processName,
+        bool expected)
+    {
+        var start = new DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero);
+        var activity = new ActivitySegment(
+            1,
+            start,
+            start.AddSeconds(durationSeconds),
+            start.AddSeconds(durationSeconds),
+            processName,
+            "Window",
+            2,
+            null,
+            false);
+
+        Assert.AreEqual(
+            expected,
+            ActivityDisplayPolicy.ShouldDisplay(activity, TimeSpan.FromSeconds(30)));
+    }
+
     private static ActivitySegment Segment(
         DateTimeOffset start,
         DateTimeOffset end,

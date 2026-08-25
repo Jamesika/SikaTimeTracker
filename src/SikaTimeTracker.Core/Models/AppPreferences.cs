@@ -10,7 +10,7 @@ public sealed record AppPreferences
 
     public int IdleThresholdMinutes { get; init; } = 5;
 
-    public int MinimumActivitySeconds { get; init; } = 2;
+    public int MinimumActivitySeconds { get; init; } = 30;
 
     public int MergeGapSeconds { get; init; } = 10;
 

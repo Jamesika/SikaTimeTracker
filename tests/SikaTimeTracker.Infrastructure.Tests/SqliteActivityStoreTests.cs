@@ -157,6 +157,16 @@ public sealed class SqliteActivityStoreTests
     }
 
     [TestMethod]
+    public async Task DefaultPreferences_UseThirtySecondMinimumActivity()
+    {
+        var settings = new ApplicationSettingsService(_store);
+
+        var preferences = await settings.LoadAsync();
+
+        Assert.AreEqual(30, preferences.MinimumActivitySeconds);
+    }
+
+    [TestMethod]
     [SupportedOSPlatform("windows")]
     public void StartupCommand_QuotesPortableExecutablePath()
     {

@@ -21,7 +21,7 @@ public sealed class ApplicationSettingsService
             StartMinimized = await GetBoolAsync("StartMinimized", false, cancellationToken),
             IdleDetectionEnabled = await GetBoolAsync("IdleDetectionEnabled", true, cancellationToken),
             IdleThresholdMinutes = await GetIntAsync("IdleThresholdMinutes", 5, 1, 120, cancellationToken),
-            MinimumActivitySeconds = await GetIntAsync("MinimumActivitySeconds", 2, 0, 60, cancellationToken),
+            MinimumActivitySeconds = await GetIntAsync("MinimumActivitySeconds", 30, 0, 60, cancellationToken),
             MergeGapSeconds = await GetIntAsync("MergeGapSeconds", 10, 0, 300, cancellationToken),
             RecordWindowTitles = await GetBoolAsync("RecordWindowTitles", true, cancellationToken),
             Theme = await GetEnumAsync("Theme", AppTheme.System, cancellationToken)

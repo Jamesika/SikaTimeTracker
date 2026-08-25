@@ -16,6 +16,7 @@ public sealed partial class ActivityView : UserControl
     private const double HeatmapCellSpacing = 3;
     private const double MinimumTimelinePixelsPerHour = 48;
     private readonly IActivityStore _store;
+    private readonly TimeSpan _minimumActivityDuration;
     private readonly ActivityStatisticsService _statistics = new();
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.Local;
     private readonly DispatcherTimer _refreshTimer;
@@ -33,9 +34,15 @@ public sealed partial class ActivityView : UserControl
     private double _lastHeatmapViewportWidth;
     private double _lastTimelineViewportWidth;
 
-    public ActivityView(IActivityStore store)
+    public ActivityView(IActivityStore store, TimeSpan minimumActivityDuration)
     {
+        if (minimumActivityDuration < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(minimumActivityDuration));
+        }
+
         _store = store;
+        _minimumActivityDuration = minimumActivityDuration;
         InitializeComponent();
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
         _refreshTimer.Tick += OnRefreshTimerTick;
@@ -137,7 +144,7 @@ public sealed partial class ActivityView : UserControl
             var (rangeStartUtc, _) = ActivityStatisticsService.GetDayBoundsUtc(firstDate, _timeZone);
             var (_, rangeEndUtc) = ActivityStatisticsService.GetDayBoundsUtc(lastDate, _timeZone);
             _activities = (await _store.GetActivitiesAsync(rangeStartUtc, rangeEndUtc))
-                .Where(activity => !ProcessExclusionPolicy.ShouldExclude(activity.ProcessName))
+                .Where(activity => ActivityDisplayPolicy.ShouldDisplay(activity, _minimumActivityDuration))
                 .ToArray();
             RenderData();
         }
