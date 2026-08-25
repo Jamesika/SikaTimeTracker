@@ -4,6 +4,8 @@
 
 Sika Time Tracker 是一款 Windows 本地时间追踪应用。它自动记录活跃窗口，使用可配置规则进行活动分类，并通过贡献热力图、每日时间轴和软件使用排行展示时间投入。
 
+![Sika Time Tracker 活动页面](docs/images/activity-overview.png)
+
 当前状态：可日常使用。
 
 产品范围与技术方案见 [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md)。
