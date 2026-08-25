@@ -18,6 +18,7 @@ public partial class App : Application
     private IActivityStore? _activityStore;
     private ActivityTrackingService? _trackingService;
     private TrayIconService? _trayIconService;
+    private TaskbarStatusWindow? _taskbarStatusWindow;
     private AppInstance? _appInstance;
     private EventWaitHandle? _exitEvent;
     private RegisteredWaitHandle? _exitRegistration;
@@ -93,8 +94,18 @@ public partial class App : Application
         _window = mainWindow;
         mainWindow.Activate();
         _trayIconService = new TrayIconService(mainWindow);
+        _taskbarStatusWindow = new TaskbarStatusWindow(
+            _activityStore,
+            _trackingService,
+            TimeSpan.FromSeconds(preferences.MinimumActivitySeconds),
+            preferences.Theme,
+            mainWindow.ShowFromTray);
+        mainWindow.PreferencesApplied += OnPreferencesApplied;
         mainWindow.Exiting += (_, _) =>
         {
+            mainWindow.PreferencesApplied -= OnPreferencesApplied;
+            _taskbarStatusWindow?.Dispose();
+            _taskbarStatusWindow = null;
             _trayIconService?.Dispose();
             _exitRegistration?.Unregister(null);
             _exitEvent?.Dispose();
@@ -111,6 +122,11 @@ public partial class App : Application
         }
 
         await _trackingService.StartAsync();
+    }
+
+    private void OnPreferencesApplied(AppPreferences preferences)
+    {
+        _taskbarStatusWindow?.ApplyPreferences(preferences);
     }
 
     private void OnInstanceActivated(object? sender, AppActivationArguments args)

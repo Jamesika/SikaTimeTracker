@@ -33,6 +33,8 @@ public sealed partial class MainWindow : Window
 
     public event EventHandler? Exiting;
 
+    public event Action<AppPreferences>? PreferencesApplied;
+
     public MainWindow(
         ActivityTrackingService trackingService,
         IActivityStore activityStore,
@@ -201,6 +203,7 @@ public sealed partial class MainWindow : Window
     {
         _preferences = preferences;
         ApplyTheme(preferences.Theme);
+        PreferencesApplied?.Invoke(preferences);
     }
 
     public async Task ExitAsync()
