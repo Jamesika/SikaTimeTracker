@@ -14,7 +14,8 @@ public sealed class TaskbarStatusWindow : IDisposable
 {
     private readonly IActivityStore _store;
     private readonly ActivityTrackingService _trackingService;
-    private readonly Action _openMainWindow;
+    private readonly Func<bool> _isMainWindowForeground;
+    private readonly Action<bool> _toggleMainWindow;
     private readonly WeeklyWorkSummaryService _summaryService = new();
     private readonly DispatcherQueue _dispatcherQueue;
     private readonly DispatcherTimer _positionTimer;
@@ -28,24 +29,28 @@ public sealed class TaskbarStatusWindow : IDisposable
     private bool _isRefreshing;
     private bool _isVisible;
     private bool _disposed;
+    private bool _wasMainWindowForegroundOnMouseDown;
 
     public TaskbarStatusWindow(
         IActivityStore store,
         ActivityTrackingService trackingService,
         TimeSpan minimumActivityDuration,
         AppTheme theme,
-        Action openMainWindow)
+        Func<bool> isMainWindowForeground,
+        Action<bool> toggleMainWindow)
     {
         _store = store;
         _trackingService = trackingService;
         _minimumActivityDuration = minimumActivityDuration;
-        _openMainWindow = openMainWindow;
+        _isMainWindowForeground = isMainWindowForeground;
+        _toggleMainWindow = toggleMainWindow;
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
         _form = new TaskbarBadgeForm
         {
             Text = "Sika Time Tracker 本周工作时长",
             AccessibleName = "本周工作时长"
         };
+        _form.MouseDown += OnBadgeMouseDown;
         _form.Click += OnBadgeClicked;
         ApplyTheme(theme);
         _windowHandle = _form.Handle;
@@ -87,6 +92,7 @@ public sealed class TaskbarStatusWindow : IDisposable
         _positionTimer.Tick -= OnPositionTimerTick;
         _summaryTimer.Tick -= OnSummaryTimerTick;
         _trackingService.ActivityRecorded -= OnActivityRecorded;
+        _form.MouseDown -= OnBadgeMouseDown;
         _form.Click -= OnBadgeClicked;
         TaskbarNativeService.Hide(_windowHandle);
         _toolTip.Dispose();
@@ -109,9 +115,18 @@ public sealed class TaskbarStatusWindow : IDisposable
         _dispatcherQueue.TryEnqueue(async () => await RefreshSummaryAsync());
     }
 
+    private void OnBadgeMouseDown(object? sender, Forms.MouseEventArgs args)
+    {
+        if (args.Button == Forms.MouseButtons.Left)
+        {
+            _wasMainWindowForegroundOnMouseDown = _isMainWindowForeground();
+        }
+    }
+
     private void OnBadgeClicked(object? sender, EventArgs args)
     {
-        _openMainWindow();
+        _toggleMainWindow(_wasMainWindowForegroundOnMouseDown);
+        _wasMainWindowForegroundOnMouseDown = false;
     }
 
     private void UpdatePosition()
@@ -191,7 +206,7 @@ public sealed class TaskbarStatusWindow : IDisposable
 
                 _form.DurationText = "--";
                 _form.AccessibleName = "本周工作时长暂时不可用";
-                _toolTip.SetToolTip(_form, "暂时无法读取本周工作时长；点击打开 Sika Time Tracker");
+                _toolTip.SetToolTip(_form, "暂时无法读取本周工作时长；点击打开或最小化 Sika Time Tracker");
             });
         }
         finally
@@ -216,7 +231,7 @@ public sealed class TaskbarStatusWindow : IDisposable
             ? $"本周工作时长：{fullDuration}"
             : "尚未创建名为“工作”的分类";
         _form.AccessibleName = description;
-        _toolTip.SetToolTip(_form, $"{description}\n点击打开 Sika Time Tracker");
+        _toolTip.SetToolTip(_form, $"{description}\n点击打开或最小化 Sika Time Tracker");
     }
 
     private static string FormatFullDuration(TimeSpan duration)
@@ -238,9 +253,13 @@ internal sealed class TaskbarBadgeForm : Forms.Form
 {
     private const int ExtendedStyleNoActivate = 0x08000000;
     private const int ExtendedStyleToolWindow = 0x00000080;
+    private const int WindowMessageMouseActivate = 0x0021;
+    private const int MouseActivateNoActivate = 3;
     private string _durationText = "计算中";
     private bool _isCompact;
     private bool _useLightPalette;
+    private bool _isHovered;
+    private bool _isPressed;
 
     public TaskbarBadgeForm()
     {
@@ -249,6 +268,8 @@ internal sealed class TaskbarBadgeForm : Forms.Form
         ShowInTaskbar = false;
         StartPosition = Forms.FormStartPosition.Manual;
         TopMost = true;
+        Cursor = Forms.Cursors.Hand;
+        AccessibleRole = Forms.AccessibleRole.PushButton;
         BackColor = DarkBackground;
         SetStyle(
             Forms.ControlStyles.AllPaintingInWmPaint
@@ -301,12 +322,68 @@ internal sealed class TaskbarBadgeForm : Forms.Form
         }
     }
 
+    protected override void WndProc(ref Forms.Message message)
+    {
+        if (message.Msg == WindowMessageMouseActivate)
+        {
+            message.Result = MouseActivateNoActivate;
+            return;
+        }
+
+        base.WndProc(ref message);
+    }
+
     protected override void OnResize(EventArgs eventArgs)
     {
         base.OnResize(eventArgs);
         var previousRegion = Region;
         Region = CreateRoundedRegion(ClientRectangle, Math.Max(8, Height / 3));
         previousRegion?.Dispose();
+    }
+
+    protected override void OnMouseEnter(EventArgs eventArgs)
+    {
+        base.OnMouseEnter(eventArgs);
+        _isHovered = true;
+        UpdateInteractionAppearance();
+    }
+
+    protected override void OnMouseLeave(EventArgs eventArgs)
+    {
+        base.OnMouseLeave(eventArgs);
+        _isHovered = false;
+        _isPressed = false;
+        UpdateInteractionAppearance();
+    }
+
+    protected override void OnMouseDown(Forms.MouseEventArgs eventArgs)
+    {
+        base.OnMouseDown(eventArgs);
+        if (eventArgs.Button == Forms.MouseButtons.Left)
+        {
+            _isPressed = true;
+            UpdateInteractionAppearance();
+        }
+    }
+
+    protected override void OnMouseUp(Forms.MouseEventArgs eventArgs)
+    {
+        base.OnMouseUp(eventArgs);
+        if (_isPressed)
+        {
+            _isPressed = false;
+            UpdateInteractionAppearance();
+        }
+    }
+
+    protected override void OnMouseCaptureChanged(EventArgs eventArgs)
+    {
+        base.OnMouseCaptureChanged(eventArgs);
+        if (!Capture && _isPressed)
+        {
+            _isPressed = false;
+            UpdateInteractionAppearance();
+        }
     }
 
     protected override void OnPaint(Forms.PaintEventArgs eventArgs)
@@ -394,7 +471,29 @@ internal sealed class TaskbarBadgeForm : Forms.Form
 
     private static readonly Color DarkBackground = Color.FromArgb(55, 55, 55);
 
+    private static readonly Color DarkHoverBackground = Color.FromArgb(70, 70, 70);
+
+    private static readonly Color DarkPressedBackground = Color.FromArgb(45, 45, 45);
+
     private static readonly Color LightBackground = Color.FromArgb(242, 242, 242);
 
-    private Color BackgroundColor => _useLightPalette ? LightBackground : DarkBackground;
+    private static readonly Color LightHoverBackground = Color.FromArgb(228, 228, 228);
+
+    private static readonly Color LightPressedBackground = Color.FromArgb(214, 214, 214);
+
+    private Color BackgroundColor => (_useLightPalette, _isPressed, _isHovered) switch
+    {
+        (true, true, _) => LightPressedBackground,
+        (true, false, true) => LightHoverBackground,
+        (true, false, false) => LightBackground,
+        (false, true, _) => DarkPressedBackground,
+        (false, false, true) => DarkHoverBackground,
+        _ => DarkBackground
+    };
+
+    private void UpdateInteractionAppearance()
+    {
+        BackColor = BackgroundColor;
+        Invalidate();
+    }
 }

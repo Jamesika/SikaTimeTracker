@@ -185,11 +185,44 @@ public sealed partial class MainWindow : Window
         _isWindowVisible = true;
         AppWindow.Show();
         Activate();
+        SetForegroundWindow(WinRT.Interop.WindowNative.GetWindowHandle(this));
         SetWindowActive(true);
         if (_lastTrackingStatus is not null)
         {
             UpdateTrackingStatus(_lastTrackingStatus);
         }
+    }
+
+    public bool IsForeground()
+    {
+        var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        return _isWindowVisible
+            && GetForegroundWindow() == windowHandle
+            && !IsIconic(windowHandle);
+    }
+
+    public void ToggleFromTaskbarBadge(bool wasForegroundBeforeClick)
+    {
+        if (AppWindow.Presenter is Microsoft.UI.Windowing.OverlappedPresenter presenter)
+        {
+            if (_isWindowVisible
+                && wasForegroundBeforeClick
+                && presenter.State != Microsoft.UI.Windowing.OverlappedPresenterState.Minimized)
+            {
+                ShowWindow(
+                    WinRT.Interop.WindowNative.GetWindowHandle(this),
+                    ShowWindowCommand.Minimize);
+                SetWindowActive(false);
+                return;
+            }
+
+            if (presenter.State == Microsoft.UI.Windowing.OverlappedPresenterState.Minimized)
+            {
+                presenter.Restore();
+            }
+        }
+
+        ShowFromTray();
     }
 
     public void HideToTray()
@@ -334,4 +367,24 @@ public sealed partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern nint SendMessage(nint windowHandle, uint message, nuint parameter, nint value);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(nint windowHandle);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(nint windowHandle);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(nint windowHandle, ShowWindowCommand command);
+
+    private enum ShowWindowCommand
+    {
+        Minimize = 6
+    }
 }

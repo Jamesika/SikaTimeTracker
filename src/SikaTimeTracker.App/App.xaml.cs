@@ -99,7 +99,9 @@ public partial class App : Application
             _trackingService,
             TimeSpan.FromSeconds(preferences.MinimumActivitySeconds),
             preferences.Theme,
-            mainWindow.ShowFromTray);
+            mainWindow.IsForeground,
+            wasForeground => mainWindow.DispatcherQueue.TryEnqueue(
+                () => mainWindow.ToggleFromTaskbarBadge(wasForeground)));
         mainWindow.PreferencesApplied += OnPreferencesApplied;
         mainWindow.Exiting += (_, _) =>
         {
