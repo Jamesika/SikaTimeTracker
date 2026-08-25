@@ -443,7 +443,11 @@ public sealed partial class ActivityView : UserControl
                         ? $"{representative.CategoryName} · {items.Length} 段活动"
                         : $"{applications} · {representative.CategoryName} · {items.Length} 段活动",
                     Duration = duration,
-                    representative.CategoryBrush
+                    representative.CategoryBrush,
+                    ProcessName = representative.Activity.ProcessName,
+                    WebsiteDomain = domain,
+                    CategoryId = representative.Activity.CategoryId,
+                    Activities = (IReadOnlyList<TimelineDisplayItem>)items
                 };
             })
             .OrderByDescending(item => item.Duration)
@@ -459,7 +463,11 @@ public sealed partial class ActivityView : UserControl
                 FormatDuration(item.Duration),
                 item.CategoryBrush,
                 new GridLength(percentage, GridUnitType.Star),
-                new GridLength(100 - percentage, GridUnitType.Star));
+                new GridLength(100 - percentage, GridUnitType.Star),
+                item.ProcessName,
+                item.WebsiteDomain,
+                item.CategoryId,
+                item.Activities);
         }).ToArray();
     }
 
@@ -700,6 +708,94 @@ public sealed partial class ActivityView : UserControl
         _ = ShowTimelineDetailsAsync(item);
     }
 
+    private void OnSoftwareUsageItemClicked(object sender, ItemClickEventArgs args)
+    {
+        if (args.ClickedItem is SoftwareUsageItem item)
+        {
+            _ = ShowSoftwareUsageDetailsAsync(item);
+        }
+    }
+
+    private async Task ShowSoftwareUsageDetailsAsync(SoftwareUsageItem item)
+    {
+        var isWebsite = !string.IsNullOrWhiteSpace(item.WebsiteDomain);
+        var details = new StackPanel { Spacing = 10, MaxWidth = 560 };
+        details.Children.Add(new TextBlock
+        {
+            Text = $"当天累计 {item.DurationText} · {item.Activities.Count} 段活动",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        });
+        details.Children.Add(new TextBlock
+        {
+            Text = isWebsite
+                ? $"网站：{item.WebsiteDomain}\n浏览器：{string.Join(" / ", item.Activities.Select(activity => activity.ApplicationName).Distinct(StringComparer.OrdinalIgnoreCase))}"
+                : $"程序：{item.ProcessName}",
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        var activityList = new StackPanel { Spacing = 6 };
+        foreach (var activity in item.Activities.OrderByDescending(activity => activity.Activity.StartLocal))
+        {
+            activityList.Children.Add(new TextBlock
+            {
+                Text = $"{activity.TimeText} · {activity.DurationText}\n{activity.Title}",
+                TextWrapping = TextWrapping.Wrap
+            });
+        }
+        details.Children.Add(new TextBlock
+        {
+            Text = "当天活动明细",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        });
+        details.Children.Add(new ScrollViewer
+        {
+            Content = activityList,
+            MaxHeight = 260,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollMode = ScrollMode.Auto
+        });
+        details.Children.Add(new TextBlock
+        {
+            Text = isWebsite
+                ? "修改后会更新这个网站域名的全部历史记录，并为后续访问建立自动分类规则。"
+                : "修改后会更新这个程序的全部历史记录，并为后续活动建立自动分类规则。",
+            Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray),
+            TextWrapping = TextWrapping.Wrap
+        });
+        var categoryBox = new ComboBox
+        {
+            Header = "分类",
+            ItemsSource = _categories,
+            DisplayMemberPath = nameof(Category.Name),
+            SelectedItem = _categories.FirstOrDefault(category => category.Id == item.CategoryId),
+            MinWidth = 260
+        };
+        details.Children.Add(categoryBox);
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = item.DisplayName,
+            Content = details,
+            PrimaryButtonText = isWebsite ? "应用到该网站全部记录" : "应用到该程序全部记录",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary
+            && categoryBox.SelectedItem is Category category)
+        {
+            var classificationService = new ProgramClassificationService(_store);
+            var changed = isWebsite
+                ? await classificationService.AssignWebsiteDomainCategoryAsync(item.WebsiteDomain!, category.Id)
+                : await classificationService.AssignCategoryAsync(item.ProcessName, category.Id);
+            await _trackingService.ReloadRulesAsync();
+            await RefreshAsync();
+            TimelineSummaryText.Text += isWebsite
+                ? $" · 已更新该网站 {changed} 条记录"
+                : $" · 已更新该程序 {changed} 条记录";
+        }
+    }
+
     private async Task ShowTimelineDetailsAsync(TimelineDisplayItem item)
     {
         var details = new StackPanel { Spacing = 10, MaxWidth = 520 };
@@ -822,5 +918,9 @@ public sealed partial class ActivityView : UserControl
         string DurationText,
         Brush CategoryBrush,
         GridLength FilledWidth,
-        GridLength RemainingWidth);
+        GridLength RemainingWidth,
+        string ProcessName,
+        string? WebsiteDomain,
+        long CategoryId,
+        IReadOnlyList<TimelineDisplayItem> Activities);
 }
