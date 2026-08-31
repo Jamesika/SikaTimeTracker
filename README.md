@@ -13,7 +13,7 @@ Sika Time Tracker 是一款 Windows 本地时间追踪应用。它自动记录�
 ## 目标平台与技术栈
 
 - Windows 10/11
-- C# / .NET 8
+- C# / .NET 10
 - WinUI 3 / Windows App SDK 2.3.1
 - SQLite
 - MVVM
@@ -46,7 +46,7 @@ Sika Time Tracker 是一款 Windows 本地时间追踪应用。它自动记录�
 
 ## 开发与测试
 
-要求 Windows 10 1809 或更高版本，并安装 .NET 8 SDK。
+要求 Windows 10 1809 或更高版本，并安装 .NET 10 SDK。
 
 ```powershell
 dotnet restore SikaTimeTracker.sln
@@ -57,7 +57,7 @@ dotnet test SikaTimeTracker.sln --configuration Debug
 开发构建使用 self-contained Windows App SDK。可执行程序位于：
 
 ```text
-src\SikaTimeTracker.App\bin\x64\Debug\net8.0-windows10.0.19041.0\SikaTimeTracker.exe
+src\SikaTimeTracker.App\bin\x64\Debug\net10.0-windows10.0.19041.0\SikaTimeTracker.exe
 ```
 
 ## 生成便携版

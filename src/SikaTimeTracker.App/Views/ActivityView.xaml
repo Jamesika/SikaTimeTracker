@@ -122,12 +122,13 @@
                         </Grid>
                         <ListView
                             x:Name="TimelineList"
+                            MaxHeight="420"
                             IsItemClickEnabled="True"
                             ItemClick="OnSoftwareUsageItemClicked"
                             ScrollViewer.HorizontalScrollBarVisibility="Hidden"
                             ScrollViewer.HorizontalScrollMode="Disabled"
-                            ScrollViewer.VerticalScrollBarVisibility="Hidden"
-                            ScrollViewer.VerticalScrollMode="Disabled"
+                            ScrollViewer.VerticalScrollBarVisibility="Auto"
+                            ScrollViewer.VerticalScrollMode="Enabled"
                             SelectionMode="None">
                             <ListView.ItemTemplate>
                                 <DataTemplate>

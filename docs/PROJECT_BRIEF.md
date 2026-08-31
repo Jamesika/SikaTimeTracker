@@ -91,7 +91,7 @@ Sika Time Tracker 是一款个人使用的 Windows 桌面应用。它在后台�
 ## 4. 推荐技术方案
 
 - **平台**：Windows 10/11，优先适配 Windows 11。
-- **开发框架**：C#、.NET 8、WinUI 3（Windows App SDK）。
+- **开发框架**：C#、.NET 10、WinUI 3（Windows App SDK）。
 - **设计体系**：WinUI 原生控件与 Fluent Design 2.0 视觉规范。
 - **数据存储**：SQLite；通过 Entity Framework Core 或轻量数据访问层管理。
 - **窗口检测**：Win32 API（如前台窗口句柄、窗口标题和所属进程查询）。

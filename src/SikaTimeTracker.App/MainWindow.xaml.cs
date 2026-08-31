@@ -30,6 +30,9 @@ public sealed partial class MainWindow : Window
     private bool _isWindowVisible = true;
     private string _currentTag = "activity";
     private FrameworkElement? _currentPage;
+    private readonly Dictionary<string, FrameworkElement> _pageCache = new(StringComparer.Ordinal);
+    private readonly DispatcherTimer _pageSwitchTimer;
+    private string? _pendingPageTag;
     private System.Drawing.Icon? _windowIcon;
 
     public event EventHandler? Exiting;
@@ -59,7 +62,12 @@ public sealed partial class MainWindow : Window
         RootNavigation.SelectedItem = RootNavigation.MenuItems[0];
         _isChangingSelection = false;
         ApplyTheme(_preferences.Theme);
-        ShowPage("activity");
+        _pageSwitchTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(200)
+        };
+        _pageSwitchTimer.Tick += OnPageSwitchTimerTick;
+        ApplyPageSwitch("activity");
         _trackingService.StatusChanged += OnTrackingStatusChanged;
         _trackingService.ActivityRecorded += OnActivityRecorded;
         _trackingStatusTimer = new DispatcherTimer
@@ -307,34 +315,76 @@ public sealed partial class MainWindow : Window
 
     private void ShowPage(string tag)
     {
+        _pendingPageTag = tag;
+        _pageSwitchTimer.Stop();
+        _pageSwitchTimer.Start();
+    }
+
+    private void OnPageSwitchTimerTick(object? sender, object args)
+    {
+        _pageSwitchTimer.Stop();
+        if (_pendingPageTag is null
+            || string.Equals(_pendingPageTag, _currentTag, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var tag = _pendingPageTag;
+        _pendingPageTag = null;
+#if DEBUG
+        PerfDiagnostics.Log($"SwitchTimer fired, switching to {tag}");
+#endif
+        ApplyPageSwitch(tag);
+    }
+
+    private void ApplyPageSwitch(string tag)
+    {
+#if DEBUG
+        var switchStopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
         if (_currentPage is ActivityView previousActivity)
         {
             previousActivity.SetHostActive(false);
         }
 
-        ContentHost.Children.Clear();
-        _currentPage = tag switch
+        if (!_pageCache.TryGetValue(tag, out var page))
         {
-            "rules" => new RulesView(_activityStore, _trackingService),
-            "settings" => new SettingsView(
-                _activityStore,
-                _settingsService,
-                _startupService,
-                _trackingService,
-                _preferences,
-                _dataDirectory,
-                ApplyPreferences),
-            _ => new ActivityView(
-                _activityStore,
-                _trackingService,
-                TimeSpan.FromSeconds(_preferences.MinimumActivitySeconds))
-        };
+            page = tag switch
+            {
+                "rules" => new RulesView(_activityStore, _trackingService),
+                "settings" => new SettingsView(
+                    _activityStore,
+                    _settingsService,
+                    _startupService,
+                    _trackingService,
+                    _preferences,
+                    _dataDirectory,
+                    ApplyPreferences),
+                _ => new ActivityView(
+                    _activityStore,
+                    _trackingService,
+                    TimeSpan.FromSeconds(_preferences.MinimumActivitySeconds))
+            };
+            _pageCache[tag] = page;
+            ContentHost.Children.Add(page);
+            page.Visibility = Visibility.Collapsed;
+        }
+
+        if (_currentPage is { } current)
+        {
+            current.Visibility = Visibility.Collapsed;
+        }
+
         _currentTag = tag;
-        ContentHost.Children.Add(_currentPage);
-        if (_currentPage is ActivityView activity)
+        _currentPage = page;
+        page.Visibility = Visibility.Visible;
+        if (page is ActivityView activity)
         {
             activity.SetHostActive(_isWindowActive);
         }
+#if DEBUG
+        PerfDiagnostics.Log($"ApplyPageSwitch({tag}): {switchStopwatch.ElapsedMilliseconds}ms");
+#endif
     }
 
     private void OnWindowActivated(object sender, WindowActivatedEventArgs args)
@@ -363,6 +413,11 @@ public sealed partial class MainWindow : Window
 
     private void ApplyWindowIcon()
     {
+        _ = ApplyWindowIconAsync();
+    }
+
+    private async Task ApplyWindowIconAsync()
+    {
         _windowIcon?.Dispose();
         _windowIcon = null;
         string? iconPath = null;
@@ -375,8 +430,8 @@ public sealed partial class MainWindow : Window
             if (iconResource is not null
                 && (!File.Exists(iconPath) || new FileInfo(iconPath).Length != iconResource.Length))
             {
-                using var iconFile = new FileStream(iconPath, FileMode.Create, FileAccess.Write, FileShare.Read);
-                iconResource.CopyTo(iconFile);
+                await using var iconFile = new FileStream(iconPath, FileMode.Create, FileAccess.Write, FileShare.Read);
+                await iconResource.CopyToAsync(iconFile);
             }
 
             if (File.Exists(iconPath))
@@ -424,5 +479,27 @@ public sealed partial class MainWindow : Window
     private enum ShowWindowCommand
     {
         Minimize = 6
+    }
+}
+
+internal static class PerfDiagnostics
+{
+    public static void Log(string message)
+    {
+        var line = $"{DateTime.Now:HH:mm:ss.fff} [{Environment.CurrentManagedThreadId}] {message}";
+        System.Diagnostics.Debug.WriteLine(line);
+        try
+        {
+            var directory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "SikaTimeTracker");
+            Directory.CreateDirectory(directory);
+            File.AppendAllText(
+                Path.Combine(directory, "perf.log"),
+                line + Environment.NewLine);
+        }
+        catch
+        {
+        }
     }
 }

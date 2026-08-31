@@ -24,7 +24,14 @@ foreach ($proxyName in @("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY")) {
     }
 
     $proxyUri = $null
-    if (-not [Uri]::TryCreate($proxyValue, [UriKind]::Absolute, [ref]$proxyUri) -or -not $proxyUri.IsLoopback) {
+    try {
+        $proxyUri = [System.Uri]::new($proxyValue, [System.UriKind]::Absolute)
+    }
+    catch {
+        $proxyUri = $null
+    }
+
+    if ($null -eq $proxyUri -or -not $proxyUri.IsLoopback) {
         continue
     }
 
@@ -50,6 +57,11 @@ if ($LASTEXITCODE -ne 0) {
     throw "Tests failed. Publish was cancelled."
 }
 
+dotnet restore $projectPath --runtime $Runtime -p:PublishReadyToRun=true
+if ($LASTEXITCODE -ne 0) {
+    throw "Restore failed. Publish was cancelled."
+}
+
 dotnet publish $projectPath `
     --configuration Release `
     --runtime $Runtime `
@@ -60,7 +72,14 @@ if ($LASTEXITCODE -ne 0) {
     foreach ($proxyName in @("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY")) {
         $proxyValue = [Environment]::GetEnvironmentVariable($proxyName)
         $proxyUri = $null
-        if ([Uri]::TryCreate($proxyValue, [UriKind]::Absolute, [ref]$proxyUri) -and $proxyUri.IsLoopback) {
+        try {
+            $proxyUri = [System.Uri]::new($proxyValue, [System.UriKind]::Absolute)
+        }
+        catch {
+            $proxyUri = $null
+        }
+
+        if ($null -ne $proxyUri -and $proxyUri.IsLoopback) {
             [Environment]::SetEnvironmentVariable($proxyName, $null)
             $removedLoopbackProxy = $true
         }

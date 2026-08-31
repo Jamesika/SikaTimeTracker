@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using Microsoft.UI.Dispatching;
@@ -321,6 +322,7 @@ internal sealed class TaskbarBadgeForm : Forms.Form
             true);
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string DurationText
     {
         get => _durationText;
@@ -331,6 +333,7 @@ internal sealed class TaskbarBadgeForm : Forms.Form
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool IsCompact
     {
         get => _isCompact;
@@ -341,6 +344,7 @@ internal sealed class TaskbarBadgeForm : Forms.Form
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool UseLightPalette
     {
         get => _useLightPalette;
