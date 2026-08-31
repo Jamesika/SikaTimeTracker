@@ -16,6 +16,10 @@
             IsTitleBarAutoPaddingEnabled="True"
             PaneDisplayMode="Left"
             SelectionChanged="OnSelectionChanged">
+            <NavigationView.Resources>
+                <!-- 指示条透明：消除选中指示条滑动动画（其 offset 动画在快速切换时会被打断） -->
+                <SolidColorBrush x:Key="NavigationViewSelectionIndicatorForeground" Color="Transparent" />
+            </NavigationView.Resources>
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="活动" Icon="Calendar" Tag="activity" />
                 <NavigationViewItem Content="分类规则" Icon="Bullets" Tag="rules" />
@@ -50,5 +54,19 @@
             </NavigationView.PaneFooter>
             <Grid x:Name="ContentHost" />
         </NavigationView>
+        <!-- 自绘选中指示条层（Composition 动画控制位置，IsHitTestVisible=false 不挡交互） -->
+        <Canvas
+            x:Name="NavIndicatorLayer"
+            IsHitTestVisible="False">
+            <Border
+                x:Name="NavIndicator"
+                Width="3"
+                Height="20"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Background="{ThemeResource AccentFillColorDefaultBrush}"
+                CornerRadius="1.5"
+                Opacity="0" />
+        </Canvas>
     </Grid>
 </Window>

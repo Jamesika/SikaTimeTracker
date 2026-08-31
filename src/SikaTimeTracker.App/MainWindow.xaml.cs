@@ -1,7 +1,11 @@
+using System.Numerics;
 using System.Runtime.InteropServices;
+using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using SikaTimeTracker.Core.Contracts;
 using SikaTimeTracker.Core.Models;
 using SikaTimeTracker.Core.Services;
@@ -16,6 +20,8 @@ public sealed partial class MainWindow : Window
     private const nuint SmallIcon = 0;
     private const nuint BigIcon = 1;
     private const string WindowIconResourceName = "SikaTimeTracker.Assets.SikaTimeTracker.ico";
+    private const double NavIndicatorHeight = 20;
+    private const double NavIndicatorInset = 4;
     private readonly ActivityTrackingService _trackingService;
     private readonly IActivityStore _activityStore;
     private readonly ApplicationSettingsService _settingsService;
@@ -34,6 +40,9 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherTimer _pageSwitchTimer;
     private string? _pendingPageTag;
     private System.Drawing.Icon? _windowIcon;
+    private Visual? _navIndicatorVisual;
+    private Compositor? _navCompositor;
+    private long _isPaneOpenToken;
 
     public event EventHandler? Exiting;
 
@@ -64,10 +73,16 @@ public sealed partial class MainWindow : Window
         ApplyTheme(_preferences.Theme);
         _pageSwitchTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromMilliseconds(200)
+            Interval = TimeSpan.FromMilliseconds(100)
         };
         _pageSwitchTimer.Tick += OnPageSwitchTimerTick;
         ApplyPageSwitch("activity");
+        _navIndicatorVisual = ElementCompositionPreview.GetElementVisual(NavIndicator);
+        _navCompositor = _navIndicatorVisual.Compositor;
+        _isPaneOpenToken = RootNavigation.RegisterPropertyChangedCallback(
+            NavigationView.IsPaneOpenProperty,
+            OnIsPaneOpenChanged);
+        DispatcherQueue.TryEnqueue(() => UpdateNavIndicator(_currentTag, animate: false));
         _trackingService.StatusChanged += OnTrackingStatusChanged;
         _trackingService.ActivityRecorded += OnActivityRecorded;
         _trackingStatusTimer = new DispatcherTimer
@@ -310,7 +325,51 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        UpdateNavIndicator(tag, animate: true);
         ShowPage(tag);
+    }
+
+    private void OnIsPaneOpenChanged(DependencyObject sender, DependencyProperty args)
+    {
+        DispatcherQueue.TryEnqueue(() => UpdateNavIndicator(_currentTag, animate: false));
+    }
+
+    private void UpdateNavIndicator(string tag, bool animate)
+    {
+        if (_navIndicatorVisual is null || _navCompositor is null)
+        {
+            return;
+        }
+
+        var item = RootNavigation.MenuItems
+            .OfType<NavigationViewItem>()
+            .FirstOrDefault(candidate => string.Equals(candidate.Tag as string, tag, StringComparison.Ordinal));
+        if (item is null || item.ActualHeight <= 0)
+        {
+            return;
+        }
+
+        var itemPosition = item.TransformToVisual(RootLayout).TransformPoint(new Windows.Foundation.Point(0, 0));
+        var targetX = (float)(itemPosition.X + NavIndicatorInset);
+        var targetY = (float)(itemPosition.Y + ((item.ActualHeight - NavIndicatorHeight) / 2));
+        NavIndicator.Opacity = 1;
+
+        if (!animate)
+        {
+            _navIndicatorVisual.Offset = new Vector3(targetX, targetY, 0);
+            return;
+        }
+
+        // Composition 动画被新动画替换时从当前合成值平滑过渡到新目标：
+        // 快速连续切换时指示条连续追踪选中项，不会跳变或被打断。
+        var easing = _navCompositor.CreateCubicBezierEasingFunction(
+            new Vector2(0.16f, 1f),
+            new Vector2(0.3f, 1f));
+        var animation = _navCompositor.CreateVector3KeyFrameAnimation();
+        animation.InsertKeyFrame(1f, new Vector3(targetX, targetY, 0), easing);
+        animation.Duration = TimeSpan.FromMilliseconds(200);
+        animation.Target = "Offset";
+        _navIndicatorVisual.StartAnimation("Offset", animation);
     }
 
     private void ShowPage(string tag)
@@ -382,9 +441,27 @@ public sealed partial class MainWindow : Window
         {
             activity.SetHostActive(_isWindowActive);
         }
+
+        PlayPageFadeIn(page);
 #if DEBUG
         PerfDiagnostics.Log($"ApplyPageSwitch({tag}): {switchStopwatch.ElapsedMilliseconds}ms");
 #endif
+    }
+
+    private static void PlayPageFadeIn(FrameworkElement page)
+    {
+        var fadeIn = new DoubleAnimation
+        {
+            From = 0,
+            To = 1,
+            Duration = TimeSpan.FromMilliseconds(150),
+            EnableDependentAnimation = true
+        };
+        Storyboard.SetTarget(fadeIn, page);
+        Storyboard.SetTargetProperty(fadeIn, "Opacity");
+        var storyboard = new Storyboard();
+        storyboard.Children.Add(fadeIn);
+        storyboard.Begin();
     }
 
     private void OnWindowActivated(object sender, WindowActivatedEventArgs args)
