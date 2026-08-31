@@ -341,7 +341,14 @@ public sealed partial class MainWindow : Window
 
     private void OnIsPaneOpenChanged(DependencyObject sender, DependencyProperty args)
     {
-        DispatcherQueue.TryEnqueue(() => UpdateNavIndicator(_currentTag, animate: false));
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            UpdateNavIndicator(_currentTag, animate: false);
+            // 导航收起时整块隐藏追踪状态，避免紧凑宽度下文字溢出错乱；展开时恢复
+            TrackingStatusPanel.Visibility = RootNavigation.IsPaneOpen
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        });
     }
 
     private void UpdateNavIndicator(string tag, bool animate)

@@ -26,7 +26,10 @@
                 <NavigationViewItem Content="设置" Icon="Setting" Tag="settings" />
             </NavigationView.MenuItems>
             <NavigationView.PaneFooter>
-                <StackPanel Margin="8,12" Spacing="4">
+                <StackPanel
+                    x:Name="TrackingStatusPanel"
+                    Margin="8,12"
+                    Spacing="4">
                     <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="追踪状态" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <Ellipse x:Name="StatusIndicator" Width="8" Height="8" Fill="{StaticResource TrackingReadyBrush}" />
