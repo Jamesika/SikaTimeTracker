@@ -18,6 +18,7 @@ public sealed partial class SettingsView : UserControl
     private readonly string _dataDirectory;
     private AppPreferences _preferences;
     private AppPreferences _baselinePreferences = new();
+    private bool _isRestoringTheme;
 
     public SettingsView(
         IActivityStore store,
@@ -56,8 +57,21 @@ public sealed partial class SettingsView : UserControl
             new ThemeChoice(AppTheme.Dark, "深色")
         };
         ThemeBox.ItemsSource = themes;
+        _isRestoringTheme = true;
         ThemeBox.SelectedItem = themes.First(choice => choice.Value == _preferences.Theme);
+        _isRestoringTheme = false;
         DatabasePathBox.Text = Path.Combine(_dataDirectory, "activity.db");
+    }
+
+    private void OnThemeSelectionChanged(object sender, SelectionChangedEventArgs args)
+    {
+        if (_isRestoringTheme || ThemeBox.SelectedItem is not ThemeChoice choice)
+        {
+            return;
+        }
+
+        // 主题选择即时生效（无需点保存）；保存按钮负责持久化
+        _applyPreferences(_preferences with { Theme = choice.Value });
     }
 
     public bool HasUnsavedChanges => ReadPreferencesFromControls() != _baselinePreferences;
@@ -98,6 +112,8 @@ public sealed partial class SettingsView : UserControl
         try
         {
             _preferences = ReadPreferencesFromControls();
+            // 主题先行应用，确保即使后续步骤失败主题也已生效
+            _applyPreferences(_preferences);
             await _settingsService.SaveAsync(_preferences);
             _startupService.SetEnabled(_preferences.RunAtStartup, _preferences.StartMinimized);
             await _trackingService.UpdateConfigurationAsync(
@@ -109,7 +125,6 @@ public sealed partial class SettingsView : UserControl
                     AdjacentMergeGap = TimeSpan.FromSeconds(_preferences.MergeGapSeconds)
                 },
                 _preferences.RecordWindowTitles);
-            _applyPreferences(_preferences);
             _baselinePreferences = _preferences;
             ShowMessage("设置已保存并生效", InfoBarSeverity.Success);
             return true;

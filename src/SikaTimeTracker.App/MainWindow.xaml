@@ -2,7 +2,7 @@
     x:Class="SikaTimeTracker.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid x:Name="RootLayout">
+    <Grid x:Name="RootLayout" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <Grid.Resources>
             <SolidColorBrush x:Key="TrackingActiveBrush" Color="#2EA043" />
             <SolidColorBrush x:Key="TrackingAfkBrush" Color="#D13438" />

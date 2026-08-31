@@ -2,7 +2,7 @@ using Forms = System.Windows.Forms;
 
 namespace SikaTimeTracker.Services;
 
-public sealed class TrayIconService : IDisposable
+public sealed partial class TrayIconService : IDisposable
 {
     private readonly MainWindow _window;
     private readonly Func<bool> _isDarkThemeProvider;

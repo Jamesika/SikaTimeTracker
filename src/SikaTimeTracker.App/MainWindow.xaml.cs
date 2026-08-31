@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Composition;
+using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Hosting;
@@ -43,6 +44,8 @@ public sealed partial class MainWindow : Window
     private Visual? _navIndicatorVisual;
     private Compositor? _navCompositor;
     private long _isPaneOpenToken;
+    private MicaController? _micaController;
+    private SystemBackdropConfiguration? _micaConfig;
 
     public event EventHandler? Exiting;
 
@@ -51,12 +54,7 @@ public sealed partial class MainWindow : Window
     public AppTheme CurrentTheme => _preferences.Theme;
 
     /// <summary>解析实际生效的主题（"跟随系统"时按窗口 ActualTheme 判定）。</summary>
-    public bool IsDarkTheme => _preferences.Theme switch
-    {
-        AppTheme.Light => false,
-        AppTheme.Dark => true,
-        _ => RootLayout.ActualTheme == ElementTheme.Dark
-    };
+    public bool IsDarkTheme => RootLayout.ActualTheme == ElementTheme.Dark;
 
     public MainWindow(
         ActivityTrackingService trackingService,
@@ -75,12 +73,12 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         Title = "Sika Time Tracker";
         ApplyWindowIcon();
-        SystemBackdrop = new MicaBackdrop();
         AppWindow.Resize(new SizeInt32(1180, 760));
         _isChangingSelection = true;
         RootNavigation.SelectedItem = RootNavigation.MenuItems[0];
         _isChangingSelection = false;
         ApplyTheme(_preferences.Theme);
+        RootLayout.ActualThemeChanged += OnActualThemeChanged;
         _pageSwitchTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(100)
@@ -93,6 +91,8 @@ public sealed partial class MainWindow : Window
             NavigationView.IsPaneOpenProperty,
             OnIsPaneOpenChanged);
         DispatcherQueue.TryEnqueue(() => UpdateNavIndicator(_currentTag, animate: false));
+        // Mica 背板延迟到窗口就绪后初始化（失败仅降级，不影响启动）
+        DispatcherQueue.TryEnqueue(InitializeMica);
         _trackingService.StatusChanged += OnTrackingStatusChanged;
         _trackingService.ActivityRecorded += OnActivityRecorded;
         _trackingStatusTimer = new DispatcherTimer
@@ -301,6 +301,8 @@ public sealed partial class MainWindow : Window
         await _trackingService.DisposeAsync();
         _windowIcon?.Dispose();
         _windowIcon = null;
+        _micaController?.Dispose();
+        _micaController = null;
         Exiting?.Invoke(this, EventArgs.Empty);
         Application.Current.Exit();
     }
@@ -483,6 +485,11 @@ public sealed partial class MainWindow : Window
 
     private void OnWindowActivated(object sender, WindowActivatedEventArgs args)
     {
+        if (_micaConfig is not null)
+        {
+            _micaConfig.IsInputActive = args.WindowActivationState != WindowActivationState.Deactivated;
+        }
+
         SetWindowActive(args.WindowActivationState != WindowActivationState.Deactivated);
     }
 
@@ -497,12 +504,88 @@ public sealed partial class MainWindow : Window
 
     private void ApplyTheme(AppTheme theme)
     {
-        RootNavigation.RequestedTheme = theme switch
+        // 窗口级主题：覆盖导航、内容页、指示条层等全部元素（Default 跟随系统）
+        RootLayout.RequestedTheme = theme switch
         {
             AppTheme.Light => ElementTheme.Light,
             AppTheme.Dark => ElementTheme.Dark,
             _ => ElementTheme.Default
         };
+        if (_micaConfig is not null)
+        {
+            _micaConfig.Theme = theme switch
+            {
+                AppTheme.Light => SystemBackdropTheme.Light,
+                AppTheme.Dark => SystemBackdropTheme.Dark,
+                _ => SystemBackdropTheme.Default
+            };
+        }
+
+        ApplyTitleBarTheme(IsDarkTheme);
+    }
+
+    private bool _micaInitialized;
+
+    private void InitializeMica()
+    {
+        if (_micaInitialized)
+        {
+            return;
+        }
+
+        _micaInitialized = true;
+        try
+        {
+            if (!MicaController.IsSupported())
+            {
+                return;
+            }
+
+            _micaConfig = new SystemBackdropConfiguration
+            {
+                IsInputActive = true,
+                Theme = _preferences.Theme switch
+                {
+                    AppTheme.Light => SystemBackdropTheme.Light,
+                    AppTheme.Dark => SystemBackdropTheme.Dark,
+                    _ => SystemBackdropTheme.Default
+                }
+            };
+            _micaController = new MicaController();
+            _micaController.AddSystemBackdropTarget((ICompositionSupportsSystemBackdrop)RootLayout);
+            _micaController.SetSystemBackdropConfiguration(_micaConfig);
+        }
+        catch
+        {
+            // Mica 初始化失败仅降级：无系统背板，窗口底色由 ApplicationPageBackgroundThemeBrush 兜底，绝不影响启动
+            _micaController?.Dispose();
+            _micaController = null;
+            _micaConfig = null;
+        }
+    }
+
+    private void ApplyTitleBarTheme(bool isDark)
+    {
+        try
+        {
+            var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            var value = isDark ? 1 : 0;
+            _ = DwmSetWindowAttribute(
+                windowHandle,
+                DwmwaUseImmersiveDarkMode,
+                ref value,
+                sizeof(int));
+        }
+        catch
+        {
+            // 句柄不可用时跳过标题栏主题设置
+        }
+    }
+
+    private void OnActualThemeChanged(FrameworkElement sender, object args)
+    {
+        // "跟随系统"时系统主题变化，标题栏随之更新（Mica 的 Default 模式自动跟随）
+        ApplyTitleBarTheme(IsDarkTheme);
     }
 
     private void ApplyWindowIcon()
@@ -569,6 +652,15 @@ public sealed partial class MainWindow : Window
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool ShowWindow(nint windowHandle, ShowWindowCommand command);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(
+        nint windowHandle,
+        int attribute,
+        ref int attributeValue,
+        int attributeSize);
+
+    private const int DwmwaUseImmersiveDarkMode = 20;
 
     private enum ShowWindowCommand
     {

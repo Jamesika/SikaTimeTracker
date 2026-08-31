@@ -3,7 +3,7 @@ using SikaTimeTracker.Core.Models;
 
 namespace SikaTimeTracker.Services;
 
-internal static class TaskbarNativeService
+internal static partial class TaskbarNativeService
 {
     private const uint AppBarGetState = 0x00000004;
     private const uint AppBarGetTaskbarPosition = 0x00000005;
@@ -192,7 +192,7 @@ internal static class TaskbarNativeService
         public readonly PixelBounds ToPixelBounds() => new(Left, Top, Right, Bottom);
     }
 
-    private sealed class TaskbarEnvironmentMonitor : IDisposable
+    private sealed partial class TaskbarEnvironmentMonitor : IDisposable
     {
         private readonly Action _changed;
         private readonly WinEventCallback _callback;
