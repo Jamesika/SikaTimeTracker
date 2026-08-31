@@ -94,7 +94,7 @@ public partial class App : Application
         _window = mainWindow;
         mainWindow.Activate();
         mainWindow.Maximize();
-        _trayIconService = new TrayIconService(mainWindow);
+        _trayIconService = new TrayIconService(mainWindow, () => mainWindow.IsDarkTheme);
         _taskbarStatusWindow = new TaskbarStatusWindow(
             _activityStore,
             _trackingService,

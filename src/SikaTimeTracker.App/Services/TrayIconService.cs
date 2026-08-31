@@ -5,19 +5,16 @@ namespace SikaTimeTracker.Services;
 public sealed class TrayIconService : IDisposable
 {
     private readonly MainWindow _window;
+    private readonly Func<bool> _isDarkThemeProvider;
     private readonly Forms.NotifyIcon _notifyIcon;
     private readonly System.Drawing.Icon _appIcon;
+    private ModernTrayMenuForm? _activeMenu;
     private bool _disposed;
 
-    public TrayIconService(MainWindow window)
+    public TrayIconService(MainWindow window, Func<bool> isDarkThemeProvider)
     {
         _window = window;
-        var menu = new Forms.ContextMenuStrip();
-        var openItem = new Forms.ToolStripMenuItem("打开 Sika Time Tracker");
-        var exitItem = new Forms.ToolStripMenuItem("退出");
-        menu.Items.Add(openItem);
-        menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add(exitItem);
+        _isDarkThemeProvider = isDarkThemeProvider;
 
         _appIcon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath ?? string.Empty)
             ?? (System.Drawing.Icon)System.Drawing.SystemIcons.Application.Clone();
@@ -25,16 +22,10 @@ public sealed class TrayIconService : IDisposable
         {
             Text = "Sika Time Tracker",
             Icon = _appIcon,
-            ContextMenuStrip = menu,
             Visible = true
         };
+        _notifyIcon.MouseUp += OnMouseUp;
         _notifyIcon.DoubleClick += (_, _) => Enqueue(_window.ShowFromTray);
-        openItem.Click += (_, _) => Enqueue(_window.ShowFromTray);
-        exitItem.Click += (_, _) => Enqueue(async () =>
-        {
-            Dispose();
-            await _window.ExitAsync();
-        });
     }
 
     public void Dispose()
@@ -44,10 +35,46 @@ public sealed class TrayIconService : IDisposable
             return;
         }
 
+        _activeMenu?.Close();
+        _activeMenu = null;
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _appIcon.Dispose();
         _disposed = true;
+    }
+
+    private void OnMouseUp(object? sender, Forms.MouseEventArgs args)
+    {
+        if (args.Button == Forms.MouseButtons.Right)
+        {
+            ShowMenu();
+        }
+    }
+
+    private void ShowMenu()
+    {
+        _activeMenu?.Close();
+        _activeMenu = null;
+        var menu = new ModernTrayMenuForm(
+            !_isDarkThemeProvider(),
+            new[]
+            {
+                new TrayMenuEntry("打开 Sika Time Tracker", () => Enqueue(_window.ShowFromTray)),
+                new TrayMenuEntry("退出", () => Enqueue(async () =>
+                {
+                    Dispose();
+                    await _window.ExitAsync();
+                }))
+            });
+        _activeMenu = menu;
+        menu.FormClosed += (_, _) =>
+        {
+            if (ReferenceEquals(_activeMenu, menu))
+            {
+                _activeMenu = null;
+            }
+        };
+        menu.ShowAt(Forms.Cursor.Position);
     }
 
     private void Enqueue(Action action)

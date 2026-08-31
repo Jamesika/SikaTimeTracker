@@ -48,6 +48,16 @@ public sealed partial class MainWindow : Window
 
     public event Action<AppPreferences>? PreferencesApplied;
 
+    public AppTheme CurrentTheme => _preferences.Theme;
+
+    /// <summary>解析实际生效的主题（"跟随系统"时按窗口 ActualTheme 判定）。</summary>
+    public bool IsDarkTheme => _preferences.Theme switch
+    {
+        AppTheme.Light => false,
+        AppTheme.Dark => true,
+        _ => RootLayout.ActualTheme == ElementTheme.Dark
+    };
+
     public MainWindow(
         ActivityTrackingService trackingService,
         IActivityStore activityStore,
