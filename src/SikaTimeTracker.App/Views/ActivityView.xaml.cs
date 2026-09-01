@@ -20,11 +20,13 @@ public sealed partial class ActivityView : UserControl
     private const double MinimumTimelinePixelsPerHour = 48;
     private readonly IActivityStore _store;
     private readonly ActivityTrackingService _trackingService;
-    private readonly TimeSpan _minimumActivityDuration;
+    private TimeSpan _minimumActivityDuration;
     private readonly ActivityStatisticsService _statistics = new();
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.Local;
     private readonly DispatcherTimer _refreshTimer;
     private readonly DispatcherTimer _fastToolTipTimer;
+    private readonly DispatcherTimer _deferredRefreshTimer;
+    private readonly DispatcherTimer _loadingDelayTimer;
     private IReadOnlyList<Category> _categories = [];
     private IReadOnlyList<ActivitySegment> _activities = [];
     private IReadOnlyList<DailyActivityTotal> _dailyTotals = [];
@@ -40,6 +42,22 @@ public sealed partial class ActivityView : UserControl
     private double _lastHeatmapViewportWidth;
     private double _lastTimelineViewportWidth;
     private FrameworkElement? _pendingFastToolTipTarget;
+    private readonly Dictionary<DateOnly, Rectangle> _heatmapCells = new();
+    private readonly Dictionary<DateOnly, string> _heatmapToolTipTexts = new();
+    private int _heatmapYear = -1;
+    private double _heatmapCellSize = -1;
+
+    private static readonly SolidColorBrush[] IntensityBrushes =
+    [
+        new(Windows.UI.Color.FromArgb(26, 140, 149, 159)),
+        new(Windows.UI.Color.FromArgb(255, 155, 233, 168)),
+        new(Windows.UI.Color.FromArgb(255, 64, 196, 99)),
+        new(Windows.UI.Color.FromArgb(255, 48, 161, 78)),
+        new(Windows.UI.Color.FromArgb(255, 40, 136, 68)),
+        new(Windows.UI.Color.FromArgb(255, 33, 110, 57))
+    ];
+
+    private static readonly SolidColorBrush SelectionStrokeBrush = new(Microsoft.UI.Colors.White);
 
     public ActivityView(
         IActivityStore store,
@@ -59,6 +77,10 @@ public sealed partial class ActivityView : UserControl
         _refreshTimer.Tick += OnRefreshTimerTick;
         _fastToolTipTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
         _fastToolTipTimer.Tick += OnFastToolTipTimerTick;
+        _deferredRefreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        _deferredRefreshTimer.Tick += OnDeferredRefreshTimerTick;
+        _loadingDelayTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        _loadingDelayTimer.Tick += OnLoadingDelayTimerTick;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
     }
@@ -77,7 +99,7 @@ public sealed partial class ActivityView : UserControl
 
         if (_isHostActive)
         {
-            await RefreshAsync();
+            ScheduleRefresh();
         }
     }
 
@@ -85,6 +107,8 @@ public sealed partial class ActivityView : UserControl
     {
         _isControlLoaded = false;
         HideFastToolTip();
+        _deferredRefreshTimer.Stop();
+        _loadingDelayTimer.Stop();
         UpdateAutoRefreshState();
     }
 
@@ -93,15 +117,51 @@ public sealed partial class ActivityView : UserControl
         var becameActive = !_isHostActive && isActive;
         _isHostActive = isActive;
         UpdateAutoRefreshState();
+        if (!isActive)
+        {
+            _deferredRefreshTimer.Stop();
+        }
+
         if (becameActive && _isControlLoaded && _isLoaded)
         {
-            RequestRefresh();
+            ScheduleRefresh();
         }
+    }
+
+    public void ApplyMinimumActivityDuration(TimeSpan minimumActivityDuration)
+    {
+        if (minimumActivityDuration < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(minimumActivityDuration));
+        }
+
+        if (_minimumActivityDuration == minimumActivityDuration)
+        {
+            return;
+        }
+
+        _minimumActivityDuration = minimumActivityDuration;
+        RequestRefresh();
     }
 
     public void RequestRefresh()
     {
         if (_isControlLoaded && _isHostActive)
+        {
+            ScheduleRefresh();
+        }
+    }
+
+    private void ScheduleRefresh()
+    {
+        _deferredRefreshTimer.Stop();
+        _deferredRefreshTimer.Start();
+    }
+
+    private void OnDeferredRefreshTimerTick(object? sender, object args)
+    {
+        _deferredRefreshTimer.Stop();
+        if (_isControlLoaded && _isHostActive && _isLoaded)
         {
             _ = RefreshAsync();
         }
@@ -216,8 +276,11 @@ public sealed partial class ActivityView : UserControl
         }
 
         _isRefreshing = true;
-        LoadingIndicator.IsActive = true;
-        LoadingIndicator.Visibility = Visibility.Visible;
+        _loadingDelayTimer.Stop();
+        _loadingDelayTimer.Start();
+#if DEBUG
+        var refreshStopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
         try
         {
             YearButton.Content = _selectedYear.ToString(CultureInfo.InvariantCulture);
@@ -228,10 +291,19 @@ public sealed partial class ActivityView : UserControl
             _activities = (await _store.GetActivitiesAsync(rangeStartUtc, rangeEndUtc))
                 .Where(activity => ActivityDisplayPolicy.ShouldDisplay(activity, _minimumActivityDuration))
                 .ToArray();
+#if DEBUG
+            PerfDiagnostics.Log(
+                $"RefreshAsync: query+filter {refreshStopwatch.ElapsedMilliseconds}ms, activities={_activities.Count}");
+            refreshStopwatch.Restart();
+#endif
             RenderData();
+#if DEBUG
+            PerfDiagnostics.Log($"RefreshAsync: RenderData {refreshStopwatch.ElapsedMilliseconds}ms");
+#endif
         }
         finally
         {
+            _loadingDelayTimer.Stop();
             LoadingIndicator.IsActive = false;
             LoadingIndicator.Visibility = Visibility.Collapsed;
             _isRefreshing = false;
@@ -243,31 +315,49 @@ public sealed partial class ActivityView : UserControl
         }
     }
 
+    private void OnLoadingDelayTimerTick(object? sender, object args)
+    {
+        _loadingDelayTimer.Stop();
+        if (_isRefreshing)
+        {
+            LoadingIndicator.IsActive = true;
+            LoadingIndicator.Visibility = Visibility.Visible;
+        }
+    }
+
     private void RenderData()
     {
         var firstDate = new DateOnly(_selectedYear, 1, 1);
         var lastDate = new DateOnly(_selectedYear, 12, 31);
         var categoryId = SelectedCategoryId;
+#if DEBUG
+        var renderStopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
         _dailyTotals = _statistics.BuildDailyTotals(
             _activities,
             firstDate,
             lastDate,
             _timeZone,
             categoryId);
+#if DEBUG
+        PerfDiagnostics.Log($"  BuildDailyTotals: {renderStopwatch.ElapsedMilliseconds}ms");
+        renderStopwatch.Restart();
+#endif
         RenderHeatmap(firstDate, lastDate);
+#if DEBUG
+        PerfDiagnostics.Log($"  RenderHeatmap: {renderStopwatch.ElapsedMilliseconds}ms");
+        renderStopwatch.Restart();
+#endif
         RenderSummary();
         RenderTimeline();
+#if DEBUG
+        PerfDiagnostics.Log($"  RenderSummary+RenderTimeline: {renderStopwatch.ElapsedMilliseconds}ms");
+#endif
     }
 
     private void RenderHeatmap(DateOnly firstDate, DateOnly lastDate)
     {
         HideFastToolTip();
-        HeatmapGrid.Children.Clear();
-        HeatmapGrid.ColumnDefinitions.Clear();
-        HeatmapGrid.RowDefinitions.Clear();
-        MonthHeaderGrid.Children.Clear();
-        MonthHeaderGrid.ColumnDefinitions.Clear();
-
         var firstOffset = ((int)firstDate.DayOfWeek + 6) % 7;
         var gridStart = firstDate.AddDays(-firstOffset);
         var weekCount = ((lastDate.DayNumber - gridStart.DayNumber) / 7) + 1;
@@ -275,6 +365,35 @@ public sealed partial class ActivityView : UserControl
         var minimumWidth = weekCount * MinimumHeatmapCellSize + (weekCount - 1) * HeatmapCellSpacing;
         var heatmapScale = viewportWidth > minimumWidth ? viewportWidth / minimumWidth : 1;
         var cellSize = MinimumHeatmapCellSize * heatmapScale;
+        if (cellSize != _heatmapCellSize || _heatmapYear != _selectedYear || _heatmapCells.Count == 0)
+        {
+            RebuildHeatmapStructure(
+                firstDate,
+                lastDate,
+                gridStart,
+                weekCount,
+                cellSize,
+                heatmapScale);
+        }
+
+        UpdateHeatmapCells(firstDate, lastDate);
+    }
+
+    private void RebuildHeatmapStructure(
+        DateOnly firstDate,
+        DateOnly lastDate,
+        DateOnly gridStart,
+        int weekCount,
+        double cellSize,
+        double heatmapScale)
+    {
+        HeatmapGrid.Children.Clear();
+        HeatmapGrid.ColumnDefinitions.Clear();
+        HeatmapGrid.RowDefinitions.Clear();
+        MonthHeaderGrid.Children.Clear();
+        MonthHeaderGrid.ColumnDefinitions.Clear();
+        _heatmapCells.Clear();
+
         var cellSpacing = HeatmapCellSpacing * heatmapScale;
         var totalWidth = weekCount * cellSize + (weekCount - 1) * cellSpacing;
         HeatmapGrid.Width = totalWidth;
@@ -293,47 +412,33 @@ public sealed partial class ActivityView : UserControl
             HeatmapGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(cellSize) });
         }
 
-        var localToday = DateOnly.FromDateTime(
-            TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, _timeZone).DateTime);
-
-        var totalsByDate = _dailyTotals.ToDictionary(item => item.Date, item => item.Duration);
         for (var date = firstDate; date <= lastDate; date = date.AddDays(1))
         {
             var daysFromStart = date.DayNumber - gridStart.DayNumber;
             var week = daysFromStart / 7;
             var day = daysFromStart % 7;
-            var duration = totalsByDate.GetValueOrDefault(date);
-            var intensityBrush = CreateIntensityBrush(duration);
-            var button = new Button
+            var cell = new Rectangle
             {
                 Width = cellSize,
                 Height = cellSize,
-                MinWidth = 0,
-                MinHeight = 0,
-                Padding = new Thickness(0),
-                BorderThickness = date == _selectedDate ? new Thickness(2) : new Thickness(0),
-                CornerRadius = new CornerRadius(2),
-                Background = intensityBrush,
-                Opacity = date > localToday ? 0.35 : 1,
+                RadiusX = 2,
+                RadiusY = 2,
                 Tag = date
             };
-            button.Resources["ButtonBackground"] = intensityBrush;
-            button.Resources["ButtonBackgroundPointerOver"] = intensityBrush;
-            button.Resources["ButtonBackgroundPressed"] = intensityBrush;
-            if (date == _selectedDate)
+            cell.PointerEntered += (_, _) =>
             {
-                button.BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.White);
-            }
-
-            var dayDescription = $"{date:yyyy-MM-dd} · {FormatDuration(duration)}";
-            AutomationProperties.SetName(button, dayDescription);
-            button.PointerEntered += (_, _) => QueueFastToolTip(button, dayDescription);
-            button.PointerExited += (_, _) => HideFastToolTip(button);
-            button.PointerCanceled += (_, _) => HideFastToolTip(button);
-            button.Click += OnHeatmapDayClicked;
-            Grid.SetColumn(button, week);
-            Grid.SetRow(button, day);
-            HeatmapGrid.Children.Add(button);
+                if (_heatmapToolTipTexts.TryGetValue(date, out var text))
+                {
+                    QueueFastToolTip(cell, text);
+                }
+            };
+            cell.PointerExited += (_, _) => HideFastToolTip(cell);
+            cell.PointerCanceled += (_, _) => HideFastToolTip(cell);
+            cell.Tapped += OnHeatmapDayClicked;
+            Grid.SetColumn(cell, week);
+            Grid.SetRow(cell, day);
+            HeatmapGrid.Children.Add(cell);
+            _heatmapCells[date] = cell;
         }
 
         for (var month = 1; month <= 12; month++)
@@ -355,6 +460,33 @@ public sealed partial class ActivityView : UserControl
             Grid.SetColumn(label, Math.Clamp(week, 0, weekCount - 1));
             Grid.SetColumnSpan(label, Math.Max(1, nextWeek - week));
             MonthHeaderGrid.Children.Add(label);
+        }
+
+        _heatmapYear = _selectedYear;
+        _heatmapCellSize = cellSize;
+    }
+
+    private void UpdateHeatmapCells(DateOnly firstDate, DateOnly lastDate)
+    {
+        var localToday = DateOnly.FromDateTime(
+            TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, _timeZone).DateTime);
+        var totalsByDate = _dailyTotals.ToDictionary(item => item.Date, item => item.Duration);
+        for (var date = firstDate; date <= lastDate; date = date.AddDays(1))
+        {
+            if (!_heatmapCells.TryGetValue(date, out var cell))
+            {
+                continue;
+            }
+
+            var duration = totalsByDate.GetValueOrDefault(date);
+            cell.Fill = GetIntensityBrush(duration);
+            cell.Opacity = date > localToday ? 0.35 : 1;
+            var isSelected = date == _selectedDate;
+            cell.Stroke = isSelected ? SelectionStrokeBrush : null;
+            cell.StrokeThickness = isSelected ? 2 : 0;
+            var dayDescription = $"{date:yyyy-MM-dd} · {FormatDuration(duration)}";
+            _heatmapToolTipTexts[date] = dayDescription;
+            AutomationProperties.SetName(cell, dayDescription);
         }
     }
 
@@ -689,9 +821,9 @@ public sealed partial class ActivityView : UserControl
         RenderData();
     }
 
-    private void OnHeatmapDayClicked(object sender, RoutedEventArgs args)
+    private void OnHeatmapDayClicked(object sender, TappedRoutedEventArgs args)
     {
-        if (sender is Button { Tag: DateOnly date })
+        if (sender is FrameworkElement { Tag: DateOnly date })
         {
             _selectedDate = date;
             RenderData();
@@ -852,18 +984,17 @@ public sealed partial class ActivityView : UserControl
 
     private long? SelectedCategoryId => (CategoryFilter.SelectedItem as CategoryFilterItem)?.Id;
 
-    private static SolidColorBrush CreateIntensityBrush(TimeSpan duration)
+    private static SolidColorBrush GetIntensityBrush(TimeSpan duration)
     {
-        var color = duration switch
+        return duration switch
         {
-            { TotalMinutes: <= 20 } => Windows.UI.Color.FromArgb(26, 140, 149, 159),
-            { TotalHours: < 2 } => Windows.UI.Color.FromArgb(255, 155, 233, 168),
-            { TotalHours: < 4 } => Windows.UI.Color.FromArgb(255, 64, 196, 99),
-            { TotalHours: < 6 } => Windows.UI.Color.FromArgb(255, 48, 161, 78),
-            { TotalHours: < 8 } => Windows.UI.Color.FromArgb(255, 40, 136, 68),
-            _ => Windows.UI.Color.FromArgb(255, 33, 110, 57)
+            { TotalMinutes: <= 20 } => IntensityBrushes[0],
+            { TotalHours: < 2 } => IntensityBrushes[1],
+            { TotalHours: < 4 } => IntensityBrushes[2],
+            { TotalHours: < 6 } => IntensityBrushes[3],
+            { TotalHours: < 8 } => IntensityBrushes[4],
+            _ => IntensityBrushes[5]
         };
-        return new SolidColorBrush(color);
     }
 
     private static string FormatApplicationName(string processName)

@@ -18,6 +18,7 @@ public sealed partial class SettingsView : UserControl
     private readonly string _dataDirectory;
     private AppPreferences _preferences;
     private AppPreferences _baselinePreferences = new();
+    private bool _isRestoringTheme;
 
     public SettingsView(
         IActivityStore store,
@@ -56,8 +57,21 @@ public sealed partial class SettingsView : UserControl
             new ThemeChoice(AppTheme.Dark, "深色")
         };
         ThemeBox.ItemsSource = themes;
+        _isRestoringTheme = true;
         ThemeBox.SelectedItem = themes.First(choice => choice.Value == _preferences.Theme);
+        _isRestoringTheme = false;
         DatabasePathBox.Text = Path.Combine(_dataDirectory, "activity.db");
+    }
+
+    private void OnThemeSelectionChanged(object sender, SelectionChangedEventArgs args)
+    {
+        if (_isRestoringTheme || ThemeBox.SelectedItem is not ThemeChoice choice)
+        {
+            return;
+        }
+
+        // 主题选择即时生效（无需点保存）；保存按钮负责持久化
+        _applyPreferences(_preferences with { Theme = choice.Value });
     }
 
     public bool HasUnsavedChanges => ReadPreferencesFromControls() != _baselinePreferences;
@@ -79,12 +93,21 @@ public sealed partial class SettingsView : UserControl
             CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Primary
         };
-        return await dialog.ShowAsync() switch
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Primary)
         {
-            ContentDialogResult.Primary => await SaveAsync(),
-            ContentDialogResult.Secondary => true,
-            _ => false
-        };
+            return await SaveAsync();
+        }
+
+        if (result == ContentDialogResult.Secondary)
+        {
+            _preferences = _baselinePreferences;
+            PopulateControls();
+            _applyPreferences(_preferences);
+            return true;
+        }
+
+        return false;
     }
 
     private async void OnSaveClicked(object sender, RoutedEventArgs args)

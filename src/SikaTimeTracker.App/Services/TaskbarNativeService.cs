@@ -1,9 +1,10 @@
 using System.Runtime.InteropServices;
+using System.Text;
 using SikaTimeTracker.Core.Models;
 
 namespace SikaTimeTracker.Services;
 
-internal static class TaskbarNativeService
+internal static partial class TaskbarNativeService
 {
     private const uint AppBarGetState = 0x00000004;
     private const uint AppBarGetTaskbarPosition = 0x00000005;
@@ -87,6 +88,7 @@ internal static class TaskbarNativeService
             || foregroundWindow == state.TaskbarWindowHandle
             || IsIconic(foregroundWindow)
             || !IsWindowVisible(foregroundWindow)
+            || IsDesktopWindow(foregroundWindow)
             || MonitorFromWindow(foregroundWindow, MonitorDefaultToNearest) != state.MonitorHandle
             || !GetWindowRect(foregroundWindow, out var foregroundBounds))
         {
@@ -145,6 +147,16 @@ internal static class TaskbarNativeService
         return new TaskbarEnvironmentMonitor(changed);
     }
 
+    /// <summary>桌面窗口（Progman/WorkerW）覆盖全屏但不属于全屏应用，不应触发徽章隐藏。</summary>
+    private static bool IsDesktopWindow(nint windowHandle)
+    {
+        var className = new StringBuilder(64);
+        _ = GetClassName(windowHandle, className, className.Capacity);
+        var name = className.ToString();
+        return string.Equals(name, "Progman", StringComparison.Ordinal)
+               || string.Equals(name, "WorkerW", StringComparison.Ordinal);
+    }
+
     private static bool IsAutoHideTaskbarRetracted(
         TaskbarEdge edge,
         PixelBounds actualBounds,
@@ -192,7 +204,7 @@ internal static class TaskbarNativeService
         public readonly PixelBounds ToPixelBounds() => new(Left, Top, Right, Bottom);
     }
 
-    private sealed class TaskbarEnvironmentMonitor : IDisposable
+    private sealed partial class TaskbarEnvironmentMonitor : IDisposable
     {
         private readonly Action _changed;
         private readonly WinEventCallback _callback;
@@ -308,6 +320,9 @@ internal static class TaskbarNativeService
 
     [DllImport("shell32.dll")]
     private static extern nuint SHAppBarMessage(uint message, ref AppBarData data);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(nint windowHandle, StringBuilder className, int maximumCount);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern nint FindWindow(string className, string? windowName);

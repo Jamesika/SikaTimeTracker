@@ -1,12 +1,18 @@
+using System.Numerics;
 using System.Runtime.InteropServices;
+using Microsoft.UI.Composition;
+using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using SikaTimeTracker.Core.Contracts;
 using SikaTimeTracker.Core.Models;
 using SikaTimeTracker.Core.Services;
 using SikaTimeTracker.Views;
 using Windows.Graphics;
+using WinRT;
 
 namespace SikaTimeTracker;
 
@@ -16,6 +22,8 @@ public sealed partial class MainWindow : Window
     private const nuint SmallIcon = 0;
     private const nuint BigIcon = 1;
     private const string WindowIconResourceName = "SikaTimeTracker.Assets.SikaTimeTracker.ico";
+    private const double NavIndicatorHeight = 20;
+    private const double NavIndicatorInset = 4;
     private readonly ActivityTrackingService _trackingService;
     private readonly IActivityStore _activityStore;
     private readonly ApplicationSettingsService _settingsService;
@@ -30,11 +38,24 @@ public sealed partial class MainWindow : Window
     private bool _isWindowVisible = true;
     private string _currentTag = "activity";
     private FrameworkElement? _currentPage;
+    private readonly Dictionary<string, FrameworkElement> _pageCache = new(StringComparer.Ordinal);
+    private readonly DispatcherTimer _pageSwitchTimer;
+    private string? _pendingPageTag;
     private System.Drawing.Icon? _windowIcon;
+    private Visual? _navIndicatorVisual;
+    private Compositor? _navCompositor;
+    private long _isPaneOpenToken;
+    private MicaController? _micaController;
+    private SystemBackdropConfiguration? _micaConfig;
 
     public event EventHandler? Exiting;
 
     public event Action<AppPreferences>? PreferencesApplied;
+
+    public AppTheme CurrentTheme => _preferences.Theme;
+
+    /// <summary>解析实际生效的主题（"跟随系统"时按窗口 ActualTheme 判定）。</summary>
+    public bool IsDarkTheme => RootLayout.ActualTheme == ElementTheme.Dark;
 
     public MainWindow(
         ActivityTrackingService trackingService,
@@ -53,13 +74,26 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         Title = "Sika Time Tracker";
         ApplyWindowIcon();
-        SystemBackdrop = new MicaBackdrop();
         AppWindow.Resize(new SizeInt32(1180, 760));
         _isChangingSelection = true;
         RootNavigation.SelectedItem = RootNavigation.MenuItems[0];
         _isChangingSelection = false;
         ApplyTheme(_preferences.Theme);
-        ShowPage("activity");
+        RootLayout.ActualThemeChanged += OnActualThemeChanged;
+        _pageSwitchTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(100)
+        };
+        _pageSwitchTimer.Tick += OnPageSwitchTimerTick;
+        ApplyPageSwitch("activity");
+        _navIndicatorVisual = ElementCompositionPreview.GetElementVisual(NavIndicator);
+        _navCompositor = _navIndicatorVisual.Compositor;
+        _isPaneOpenToken = RootNavigation.RegisterPropertyChangedCallback(
+            NavigationView.IsPaneOpenProperty,
+            OnIsPaneOpenChanged);
+        DispatcherQueue.TryEnqueue(() => UpdateNavIndicator(_currentTag, animate: false));
+        // Mica 背板延迟到窗口就绪后初始化（失败仅降级，不影响启动）
+        DispatcherQueue.TryEnqueue(InitializeMica);
         _trackingService.StatusChanged += OnTrackingStatusChanged;
         _trackingService.ActivityRecorded += OnActivityRecorded;
         _trackingStatusTimer = new DispatcherTimer
@@ -250,6 +284,12 @@ public sealed partial class MainWindow : Window
     {
         _preferences = preferences;
         ApplyTheme(preferences.Theme);
+        if (_pageCache.TryGetValue("activity", out var page) && page is ActivityView activity)
+        {
+            activity.ApplyMinimumActivityDuration(
+                TimeSpan.FromSeconds(preferences.MinimumActivitySeconds));
+        }
+
         PreferencesApplied?.Invoke(preferences);
     }
 
@@ -268,6 +308,8 @@ public sealed partial class MainWindow : Window
         await _trackingService.DisposeAsync();
         _windowIcon?.Dispose();
         _windowIcon = null;
+        _micaController?.Dispose();
+        _micaController = null;
         Exiting?.Invoke(this, EventArgs.Empty);
         Application.Current.Exit();
     }
@@ -302,43 +344,159 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        UpdateNavIndicator(tag, animate: true);
         ShowPage(tag);
+    }
+
+    private void OnIsPaneOpenChanged(DependencyObject sender, DependencyProperty args)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            UpdateNavIndicator(_currentTag, animate: false);
+            // 导航收起时整块隐藏追踪状态，避免紧凑宽度下文字溢出错乱；展开时恢复
+            TrackingStatusPanel.Visibility = RootNavigation.IsPaneOpen
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        });
+    }
+
+    private void UpdateNavIndicator(string tag, bool animate)
+    {
+        if (_navIndicatorVisual is null || _navCompositor is null)
+        {
+            return;
+        }
+
+        var item = RootNavigation.MenuItems
+            .OfType<NavigationViewItem>()
+            .FirstOrDefault(candidate => string.Equals(candidate.Tag as string, tag, StringComparison.Ordinal));
+        if (item is null || item.ActualHeight <= 0)
+        {
+            return;
+        }
+
+        var itemPosition = item.TransformToVisual(RootLayout).TransformPoint(new Windows.Foundation.Point(0, 0));
+        var targetX = (float)(itemPosition.X + NavIndicatorInset);
+        var targetY = (float)(itemPosition.Y + ((item.ActualHeight - NavIndicatorHeight) / 2));
+        NavIndicator.Opacity = 1;
+
+        if (!animate)
+        {
+            _navIndicatorVisual.Offset = new Vector3(targetX, targetY, 0);
+            return;
+        }
+
+        // Composition 动画被新动画替换时从当前合成值平滑过渡到新目标：
+        // 快速连续切换时指示条连续追踪选中项，不会跳变或被打断。
+        var easing = _navCompositor.CreateCubicBezierEasingFunction(
+            new Vector2(0.16f, 1f),
+            new Vector2(0.3f, 1f));
+        var animation = _navCompositor.CreateVector3KeyFrameAnimation();
+        animation.InsertKeyFrame(1f, new Vector3(targetX, targetY, 0), easing);
+        animation.Duration = TimeSpan.FromMilliseconds(200);
+        animation.Target = "Offset";
+        _navIndicatorVisual.StartAnimation("Offset", animation);
     }
 
     private void ShowPage(string tag)
     {
+        _pendingPageTag = tag;
+        _pageSwitchTimer.Stop();
+        _pageSwitchTimer.Start();
+    }
+
+    private void OnPageSwitchTimerTick(object? sender, object args)
+    {
+        _pageSwitchTimer.Stop();
+        if (_pendingPageTag is null
+            || string.Equals(_pendingPageTag, _currentTag, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var tag = _pendingPageTag;
+        _pendingPageTag = null;
+#if DEBUG
+        PerfDiagnostics.Log($"SwitchTimer fired, switching to {tag}");
+#endif
+        ApplyPageSwitch(tag);
+    }
+
+    private void ApplyPageSwitch(string tag)
+    {
+#if DEBUG
+        var switchStopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
         if (_currentPage is ActivityView previousActivity)
         {
             previousActivity.SetHostActive(false);
         }
 
-        ContentHost.Children.Clear();
-        _currentPage = tag switch
+        if (!_pageCache.TryGetValue(tag, out var page))
         {
-            "rules" => new RulesView(_activityStore, _trackingService),
-            "settings" => new SettingsView(
-                _activityStore,
-                _settingsService,
-                _startupService,
-                _trackingService,
-                _preferences,
-                _dataDirectory,
-                ApplyPreferences),
-            _ => new ActivityView(
-                _activityStore,
-                _trackingService,
-                TimeSpan.FromSeconds(_preferences.MinimumActivitySeconds))
-        };
+            page = tag switch
+            {
+                "rules" => new RulesView(_activityStore, _trackingService),
+                "settings" => new SettingsView(
+                    _activityStore,
+                    _settingsService,
+                    _startupService,
+                    _trackingService,
+                    _preferences,
+                    _dataDirectory,
+                    ApplyPreferences),
+                _ => new ActivityView(
+                    _activityStore,
+                    _trackingService,
+                    TimeSpan.FromSeconds(_preferences.MinimumActivitySeconds))
+            };
+            _pageCache[tag] = page;
+            ContentHost.Children.Add(page);
+            page.Visibility = Visibility.Collapsed;
+        }
+
+        if (_currentPage is { } current)
+        {
+            current.Visibility = Visibility.Collapsed;
+        }
+
         _currentTag = tag;
-        ContentHost.Children.Add(_currentPage);
-        if (_currentPage is ActivityView activity)
+        _currentPage = page;
+        page.Visibility = Visibility.Visible;
+        if (page is ActivityView activity)
         {
             activity.SetHostActive(_isWindowActive);
         }
+
+        PlayPageFadeIn(page);
+#if DEBUG
+        PerfDiagnostics.Log($"ApplyPageSwitch({tag}): {switchStopwatch.ElapsedMilliseconds}ms");
+#endif
+    }
+
+    private static void PlayPageFadeIn(FrameworkElement page)
+    {
+        var fadeIn = new DoubleAnimation
+        {
+            From = 0,
+            To = 1,
+            Duration = TimeSpan.FromMilliseconds(150),
+            EnableDependentAnimation = true
+        };
+        Storyboard.SetTarget(fadeIn, page);
+        Storyboard.SetTargetProperty(fadeIn, "Opacity");
+        var storyboard = new Storyboard();
+        storyboard.Children.Add(fadeIn);
+        storyboard.Begin();
     }
 
     private void OnWindowActivated(object sender, WindowActivatedEventArgs args)
     {
+        if (_micaConfig is not null)
+        {
+            _micaConfig.IsInputActive = args.WindowActivationState != WindowActivationState.Deactivated;
+        }
+
         SetWindowActive(args.WindowActivationState != WindowActivationState.Deactivated);
     }
 
@@ -353,15 +511,96 @@ public sealed partial class MainWindow : Window
 
     private void ApplyTheme(AppTheme theme)
     {
-        RootNavigation.RequestedTheme = theme switch
+        // 窗口级主题：覆盖导航、内容页、指示条层等全部元素（Default 跟随系统）
+        RootLayout.RequestedTheme = theme switch
         {
             AppTheme.Light => ElementTheme.Light,
             AppTheme.Dark => ElementTheme.Dark,
             _ => ElementTheme.Default
         };
+        if (_micaConfig is not null)
+        {
+            _micaConfig.Theme = theme switch
+            {
+                AppTheme.Light => SystemBackdropTheme.Light,
+                AppTheme.Dark => SystemBackdropTheme.Dark,
+                _ => SystemBackdropTheme.Default
+            };
+        }
+
+        ApplyTitleBarTheme(IsDarkTheme);
+    }
+
+    private bool _micaInitialized;
+
+    private void InitializeMica()
+    {
+        if (_micaInitialized)
+        {
+            return;
+        }
+
+        _micaInitialized = true;
+        try
+        {
+            if (!MicaController.IsSupported())
+            {
+                return;
+            }
+
+            _micaConfig = new SystemBackdropConfiguration
+            {
+                IsInputActive = true,
+                Theme = _preferences.Theme switch
+                {
+                    AppTheme.Light => SystemBackdropTheme.Light,
+                    AppTheme.Dark => SystemBackdropTheme.Dark,
+                    _ => SystemBackdropTheme.Default
+                }
+            };
+            _micaController = new MicaController();
+            _micaController.AddSystemBackdropTarget(this.As<ICompositionSupportsSystemBackdrop>());
+            _micaController.SetSystemBackdropConfiguration(_micaConfig);
+        }
+        catch
+        {
+            // Mica 初始化失败仅降级：无系统背板，窗口底色由 ApplicationPageBackgroundThemeBrush 兜底，绝不影响启动
+            _micaController?.Dispose();
+            _micaController = null;
+            _micaConfig = null;
+        }
+    }
+
+    private void ApplyTitleBarTheme(bool isDark)
+    {
+        try
+        {
+            var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            var value = isDark ? 1 : 0;
+            _ = DwmSetWindowAttribute(
+                windowHandle,
+                DwmwaUseImmersiveDarkMode,
+                ref value,
+                sizeof(int));
+        }
+        catch
+        {
+            // 句柄不可用时跳过标题栏主题设置
+        }
+    }
+
+    private void OnActualThemeChanged(FrameworkElement sender, object args)
+    {
+        // "跟随系统"时系统主题变化，标题栏随之更新（Mica 的 Default 模式自动跟随）
+        ApplyTitleBarTheme(IsDarkTheme);
     }
 
     private void ApplyWindowIcon()
+    {
+        _ = ApplyWindowIconAsync();
+    }
+
+    private async Task ApplyWindowIconAsync()
     {
         _windowIcon?.Dispose();
         _windowIcon = null;
@@ -375,8 +614,8 @@ public sealed partial class MainWindow : Window
             if (iconResource is not null
                 && (!File.Exists(iconPath) || new FileInfo(iconPath).Length != iconResource.Length))
             {
-                using var iconFile = new FileStream(iconPath, FileMode.Create, FileAccess.Write, FileShare.Read);
-                iconResource.CopyTo(iconFile);
+                await using var iconFile = new FileStream(iconPath, FileMode.Create, FileAccess.Write, FileShare.Read);
+                await iconResource.CopyToAsync(iconFile);
             }
 
             if (File.Exists(iconPath))
@@ -421,8 +660,40 @@ public sealed partial class MainWindow : Window
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool ShowWindow(nint windowHandle, ShowWindowCommand command);
 
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(
+        nint windowHandle,
+        int attribute,
+        ref int attributeValue,
+        int attributeSize);
+
+    private const int DwmwaUseImmersiveDarkMode = 20;
+
     private enum ShowWindowCommand
     {
         Minimize = 6
+    }
+}
+
+internal static class PerfDiagnostics
+{
+    [System.Diagnostics.Conditional("DEBUG")]
+    public static void Log(string message)
+    {
+        var line = $"{DateTime.Now:HH:mm:ss.fff} [{Environment.CurrentManagedThreadId}] {message}";
+        System.Diagnostics.Debug.WriteLine(line);
+        try
+        {
+            var directory = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "SikaTimeTracker");
+            Directory.CreateDirectory(directory);
+            File.AppendAllText(
+                Path.Combine(directory, "perf.log"),
+                line + Environment.NewLine);
+        }
+        catch
+        {
+        }
     }
 }

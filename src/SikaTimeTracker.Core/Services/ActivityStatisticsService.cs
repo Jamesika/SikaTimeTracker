@@ -19,12 +19,35 @@ public sealed class ActivityStatisticsService
         var filtered = activities
             .Where(activity => !categoryId.HasValue || activity.CategoryId == categoryId.Value)
             .ToArray();
-        var totals = new List<DailyActivityTotal>(lastDate.DayNumber - firstDate.DayNumber + 1);
+        var dayCount = lastDate.DayNumber - firstDate.DayNumber + 1;
+        var offset = firstDate.DayNumber;
+        var ticksByDay = new long[dayCount];
+        foreach (var activity in filtered)
+        {
+            var effectiveEndUtc = activity.EffectiveEndTimeUtc;
+            if (effectiveEndUtc <= activity.StartTimeUtc)
+            {
+                continue;
+            }
+
+            var firstDay = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(activity.StartTimeUtc, timeZone).DateTime);
+            var lastDay = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(effectiveEndUtc, timeZone).DateTime);
+            for (var date = firstDay; date <= lastDay; date = date.AddDays(1))
+            {
+                if (date < firstDate || date > lastDate)
+                {
+                    continue;
+                }
+
+                var (dayStartUtc, dayEndUtc) = GetDayBoundsUtc(date, timeZone);
+                ticksByDay[date.DayNumber - offset] += GetOverlap(activity, dayStartUtc, dayEndUtc).Ticks;
+            }
+        }
+
+        var totals = new List<DailyActivityTotal>(dayCount);
         for (var date = firstDate; date <= lastDate; date = date.AddDays(1))
         {
-            var (dayStartUtc, dayEndUtc) = GetDayBoundsUtc(date, timeZone);
-            var ticks = filtered.Sum(activity => GetOverlap(activity, dayStartUtc, dayEndUtc).Ticks);
-            totals.Add(new DailyActivityTotal(date, TimeSpan.FromTicks(ticks)));
+            totals.Add(new DailyActivityTotal(date, TimeSpan.FromTicks(ticksByDay[date.DayNumber - offset])));
         }
 
         return totals;

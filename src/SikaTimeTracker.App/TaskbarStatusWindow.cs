@@ -1,5 +1,7 @@
+using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using SikaTimeTracker.Core.Contracts;
@@ -12,6 +14,7 @@ namespace SikaTimeTracker;
 
 public sealed class TaskbarStatusWindow : IDisposable
 {
+    private const string BadgeManualPositionSettingKey = "BadgeManualPosition";
     private readonly IActivityStore _store;
     private readonly ActivityTrackingService _trackingService;
     private readonly Func<bool> _isMainWindowForeground;
@@ -32,6 +35,9 @@ public sealed class TaskbarStatusWindow : IDisposable
     private bool _isVisible;
     private bool _disposed;
     private bool _wasMainWindowForegroundOnMouseDown;
+    private bool _isManuallyPositioned;
+    private bool _isDraggingBadge;
+    private System.Drawing.Point _manualPosition;
     private int _positionUpdateQueued;
 
     public TaskbarStatusWindow(
@@ -54,7 +60,10 @@ public sealed class TaskbarStatusWindow : IDisposable
             AccessibleName = "本周工作时长"
         };
         _form.MouseDown += OnBadgeMouseDown;
-        _form.Click += OnBadgeClicked;
+        _form.SingleClicked += OnBadgeSingleClicked;
+        _form.DoubleClicked += OnBadgeDoubleClicked;
+        _form.DragStarted += OnBadgeDragStarted;
+        _form.DragEnded += OnBadgeDragEnded;
         ApplyTheme(theme);
         _windowHandle = _form.Handle;
         TaskbarNativeService.ConfigureToolWindow(_windowHandle);
@@ -72,6 +81,7 @@ public sealed class TaskbarStatusWindow : IDisposable
         _positionTimer.Start();
         _summaryTimer.Start();
         UpdatePosition();
+        _ = LoadManualPositionAsync();
         _ = RefreshSummaryAsync();
     }
 
@@ -104,7 +114,10 @@ public sealed class TaskbarStatusWindow : IDisposable
         _trackingService.ActivityRecorded -= OnActivityRecorded;
         _environmentMonitor.Dispose();
         _form.MouseDown -= OnBadgeMouseDown;
-        _form.Click -= OnBadgeClicked;
+        _form.SingleClicked -= OnBadgeSingleClicked;
+        _form.DoubleClicked -= OnBadgeDoubleClicked;
+        _form.DragStarted -= OnBadgeDragStarted;
+        _form.DragEnded -= OnBadgeDragEnded;
         TaskbarNativeService.Hide(_windowHandle);
         _toolTip.Dispose();
         _form.Close();
@@ -164,14 +177,43 @@ public sealed class TaskbarStatusWindow : IDisposable
         }
     }
 
-    private void OnBadgeClicked(object? sender, EventArgs args)
+    private void OnBadgeSingleClicked()
     {
         _toggleMainWindow(_wasMainWindowForegroundOnMouseDown);
         _wasMainWindowForegroundOnMouseDown = false;
     }
 
+    private void OnBadgeDoubleClicked()
+    {
+        // 双击恢复自动贴回任务栏
+        _isManuallyPositioned = false;
+        _ = ClearManualPositionAsync();
+        UpdatePosition();
+    }
+
+    private void OnBadgeDragStarted()
+    {
+        _isDraggingBadge = true;
+    }
+
+    private void OnBadgeDragEnded(System.Drawing.Point location)
+    {
+        _isDraggingBadge = false;
+        _manualPosition = location;
+        _isManuallyPositioned = true;
+        _ = SaveManualPositionAsync(location);
+        UpdatePosition();
+    }
+
     private void UpdatePosition()
     {
+        // 拖动期间不自动定位：窗口位置变化触发的 WinEvent 会回调 UpdatePosition，
+        // 若此时贴回任务栏会导致拖动被打断
+        if (_isDraggingBadge)
+        {
+            return;
+        }
+
         if (!TaskbarNativeService.TryGetTaskbarState(out var taskbar)
             || taskbar.IsTemporarilyHidden
             || TaskbarNativeService.IsFullscreenWindowOnTaskbarMonitor(taskbar, _windowHandle))
@@ -182,6 +224,17 @@ public sealed class TaskbarStatusWindow : IDisposable
                 _isVisible = false;
             }
 
+            return;
+        }
+
+        if (_isManuallyPositioned)
+        {
+            // 手动位置：停靠在用户放置处，不贴回任务栏（尺寸沿用当前值）
+            var position = ClampToWorkingArea(_manualPosition, _form.Width, _form.Height);
+            _isVisible = TaskbarNativeService.PlaceAndShow(
+                _windowHandle,
+                taskbar.TaskbarWindowHandle,
+                new TaskbarBadgePlacement(position.X, position.Y, _form.Width, _form.Height, _isCompact));
             return;
         }
 
@@ -199,6 +252,72 @@ public sealed class TaskbarStatusWindow : IDisposable
             _windowHandle,
             taskbar.TaskbarWindowHandle,
             placement);
+    }
+
+    private static System.Drawing.Point ClampToWorkingArea(
+        System.Drawing.Point desired,
+        int width,
+        int height)
+    {
+        // 用整个屏幕 Bounds（含任务栏占位），手动位置可放到任务栏区域/屏幕边缘
+        var bounds = Forms.Screen.FromPoint(desired).Bounds;
+        var x = Math.Clamp(desired.X, bounds.Left, Math.Max(bounds.Left, bounds.Right - width));
+        var y = Math.Clamp(desired.Y, bounds.Top, Math.Max(bounds.Top, bounds.Bottom - height));
+        return new System.Drawing.Point(x, y);
+    }
+
+    private async Task SaveManualPositionAsync(System.Drawing.Point location)
+    {
+        try
+        {
+            await _store.SetSettingAsync(
+                BadgeManualPositionSettingKey,
+                $"{location.X},{location.Y},{_form.Width},{_form.Height}");
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task ClearManualPositionAsync()
+    {
+        try
+        {
+            await _store.SetSettingAsync(BadgeManualPositionSettingKey, string.Empty);
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task LoadManualPositionAsync()
+    {
+        try
+        {
+            var value = await _store.GetSettingAsync(BadgeManualPositionSettingKey);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return;
+            }
+
+            var parts = value.Split(',');
+            if (parts.Length >= 4
+                && int.TryParse(parts[0], out var x)
+                && int.TryParse(parts[1], out var y)
+                && int.TryParse(parts[2], out var width)
+                && int.TryParse(parts[3], out var height))
+            {
+                _manualPosition = ClampToWorkingArea(
+                    new System.Drawing.Point(x, y),
+                    Math.Max(1, width),
+                    Math.Max(1, height));
+                _isManuallyPositioned = true;
+                UpdatePosition();
+            }
+        }
+        catch
+        {
+        }
     }
 
     private async Task RefreshSummaryAsync()
@@ -296,11 +415,33 @@ internal sealed class TaskbarBadgeForm : Forms.Form
     private const int ExtendedStyleToolWindow = 0x00000080;
     private const int WindowMessageMouseActivate = 0x0021;
     private const int MouseActivateNoActivate = 3;
+    private const int DragThresholdPixels = 4;
+    private const uint SetWindowPositionNoSize = 0x0001;
+    private const uint SetWindowPositionNoZOrder = 0x0004;
+    private const uint SetWindowPositionNoActivate = 0x0010;
     private string _durationText = "计算中";
     private bool _isCompact;
     private bool _useLightPalette;
     private bool _isHovered;
     private bool _isPressed;
+    private bool _mouseDownLeft;
+    private bool _isDragging;
+    private bool _suppressClick;
+    private System.Drawing.Point _mouseDownScreen;
+    private System.Drawing.Point _windowStartLocation;
+    private DateTime _lastMouseDownUtc;
+    private System.Drawing.Point _lastMouseDownScreen;
+    private DateTime _lastDragLogUtc;
+    private int _dragLogCount;
+    private readonly Forms.Timer _clickDelayTimer;
+
+    public event Action<System.Drawing.Point>? DragEnded;
+
+    public event Action? DragStarted;
+
+    public event Action? SingleClicked;
+
+    public event Action? DoubleClicked;
 
     public TaskbarBadgeForm()
     {
@@ -319,8 +460,11 @@ internal sealed class TaskbarBadgeForm : Forms.Form
             | Forms.ControlStyles.ResizeRedraw
             | Forms.ControlStyles.UserPaint,
             true);
+        _clickDelayTimer = new Forms.Timer { Interval = Forms.SystemInformation.DoubleClickTime };
+        _clickDelayTimer.Tick += OnClickDelayTimerTick;
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public string DurationText
     {
         get => _durationText;
@@ -331,6 +475,7 @@ internal sealed class TaskbarBadgeForm : Forms.Form
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool IsCompact
     {
         get => _isCompact;
@@ -341,6 +486,7 @@ internal sealed class TaskbarBadgeForm : Forms.Form
         }
     }
 
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public bool UseLightPalette
     {
         get => _useLightPalette;
@@ -400,32 +546,178 @@ internal sealed class TaskbarBadgeForm : Forms.Form
 
     protected override void OnMouseDown(Forms.MouseEventArgs eventArgs)
     {
+        PerfDiagnostics.Log($"Badge: MouseDown button={eventArgs.Button} loc={eventArgs.Location} win={Location}");
         base.OnMouseDown(eventArgs);
-        if (eventArgs.Button == Forms.MouseButtons.Left)
+        if (eventArgs.Button != Forms.MouseButtons.Left)
         {
-            _isPressed = true;
-            UpdateInteractionAppearance();
+            return;
         }
+
+        _mouseDownLeft = true;
+        _mouseDownScreen = Forms.Cursor.Position;
+        _windowStartLocation = Location;
+        _isDragging = false;
+        Capture = true;
+
+        // 双击检测（系统双击时间与距离阈值）
+        var now = DateTime.UtcNow;
+        var isDoubleClick = (now - _lastMouseDownUtc).TotalMilliseconds <= Forms.SystemInformation.DoubleClickTime
+                            && Math.Abs(_mouseDownScreen.X - _lastMouseDownScreen.X) <= Forms.SystemInformation.DoubleClickSize.Width
+                            && Math.Abs(_mouseDownScreen.Y - _lastMouseDownScreen.Y) <= Forms.SystemInformation.DoubleClickSize.Height;
+        _lastMouseDownUtc = now;
+        _lastMouseDownScreen = _mouseDownScreen;
+        if (isDoubleClick)
+        {
+            _clickDelayTimer.Stop();
+            _suppressClick = true;
+            DoubleClicked?.Invoke();
+        }
+        else
+        {
+            // 关键：普通按下重置抑制标志——上次拖动/双击留下的 true 会卡死后续拖动
+            _suppressClick = false;
+        }
+
+        _isPressed = true;
+        UpdateInteractionAppearance();
+    }
+
+    protected override void OnMouseMove(Forms.MouseEventArgs eventArgs)
+    {
+        // 注意：入口只检查按下状态，不能用 _suppressClick——
+        // 拖动移动中 _suppressClick 会被置 true，若作为入口条件会导致拖动只动一帧就停
+        if (_mouseDownLeft)
+        {
+            var deltaX = Forms.Cursor.Position.X - _mouseDownScreen.X;
+            var deltaY = Forms.Cursor.Position.Y - _mouseDownScreen.Y;
+            if (!_isDragging
+                && (Math.Abs(deltaX) > DragThresholdPixels || Math.Abs(deltaY) > DragThresholdPixels))
+            {
+                _isDragging = true;
+                _isHovered = false;
+                _dragLogCount = 0;
+                PerfDiagnostics.Log($"Badge: DragStarted start={_windowStartLocation}");
+                DragStarted?.Invoke();
+            }
+
+            if (_isDragging)
+            {
+                // 拖动：跟随鼠标并约束在光标所在屏幕的工作区内（多屏适配）
+                // 用原生 SetWindowPos 移动（绕过 WinForms Location setter），再同步边界缓存
+                var target = ClampToWorkingArea(new System.Drawing.Point(
+                    _windowStartLocation.X + deltaX,
+                    _windowStartLocation.Y + deltaY));
+                SetWindowPos(
+                    Handle,
+                    nint.Zero,
+                    target.X,
+                    target.Y,
+                    0,
+                    0,
+                    SetWindowPositionNoSize | SetWindowPositionNoZOrder | SetWindowPositionNoActivate);
+                UpdateBounds(target.X, target.Y, Width, Height);
+                _suppressClick = true;
+                var now = DateTime.UtcNow;
+                if (_dragLogCount < 30
+                    && (now - _lastDragLogUtc).TotalMilliseconds >= 150)
+                {
+                    _lastDragLogUtc = now;
+                    _dragLogCount++;
+                    PerfDiagnostics.Log($"Badge: drag move -> {Location}");
+                }
+
+                return;
+            }
+        }
+
+        base.OnMouseMove(eventArgs);
     }
 
     protected override void OnMouseUp(Forms.MouseEventArgs eventArgs)
     {
         base.OnMouseUp(eventArgs);
-        if (_isPressed)
+        if (eventArgs.Button != Forms.MouseButtons.Left || !_mouseDownLeft)
         {
-            _isPressed = false;
-            UpdateInteractionAppearance();
+            return;
         }
+
+        _mouseDownLeft = false;
+        Capture = false;
+        if (_isDragging)
+        {
+            _isDragging = false;
+            _suppressClick = true;
+            PerfDiagnostics.Log($"Badge: DragEnded at {Location}");
+            DragEnded?.Invoke(Location);
+        }
+        else if (!_suppressClick)
+        {
+            // 单击候选：延迟到双击窗口结束再触发，避免与双击冲突
+            _clickDelayTimer.Stop();
+            _clickDelayTimer.Start();
+        }
+
+        _isPressed = false;
+        UpdateInteractionAppearance();
     }
 
     protected override void OnMouseCaptureChanged(EventArgs eventArgs)
     {
         base.OnMouseCaptureChanged(eventArgs);
-        if (!Capture && _isPressed)
+        if (!Capture)
         {
-            _isPressed = false;
-            UpdateInteractionAppearance();
+            if (_isDragging)
+            {
+                // 拖动中捕获丢失：立即重新捕获，避免拖动中断
+                Capture = true;
+                return;
+            }
+
+            _mouseDownLeft = false;
+            _isDragging = false;
+            if (_isPressed)
+            {
+                _isPressed = false;
+                UpdateInteractionAppearance();
+            }
         }
+    }
+
+    protected override void OnFormClosing(Forms.FormClosingEventArgs eventArgs)
+    {
+        base.OnFormClosing(eventArgs);
+        _clickDelayTimer.Stop();
+        _clickDelayTimer.Tick -= OnClickDelayTimerTick;
+        _clickDelayTimer.Dispose();
+    }
+
+    private void OnClickDelayTimerTick(object? sender, EventArgs eventArgs)
+    {
+        _clickDelayTimer.Stop();
+        if (!_suppressClick)
+        {
+            SingleClicked?.Invoke();
+        }
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(
+        nint windowHandle,
+        nint insertAfter,
+        int x,
+        int y,
+        int cx,
+        int cy,
+        uint flags);
+
+    private System.Drawing.Point ClampToWorkingArea(System.Drawing.Point desired)
+    {
+        // 用整个屏幕 Bounds（含任务栏占位），允许拖到任务栏区域/屏幕边缘
+        var bounds = Forms.Screen.FromPoint(Forms.Cursor.Position).Bounds;
+        var x = Math.Clamp(desired.X, bounds.Left, Math.Max(bounds.Left, bounds.Right - Width));
+        var y = Math.Clamp(desired.Y, bounds.Top, Math.Max(bounds.Top, bounds.Bottom - Height));
+        return new System.Drawing.Point(x, y);
     }
 
     protected override void OnPaint(Forms.PaintEventArgs eventArgs)
