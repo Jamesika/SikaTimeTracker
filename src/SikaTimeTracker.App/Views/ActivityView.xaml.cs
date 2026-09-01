@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -31,6 +32,7 @@ public sealed partial class ActivityView : UserControl
     private IReadOnlyList<ActivitySegment> _activities = [];
     private IReadOnlyList<DailyActivityTotal> _dailyTotals = [];
     private IReadOnlyList<TimelineDisplayItem> _timelineItems = [];
+    private readonly ObservableCollection<SoftwareUsageItem> _softwareUsageItems = [];
     private DateOnly _selectedDate = DateOnly.FromDateTime(DateTime.Today);
     private int _selectedYear = DateTime.Today.Year;
     private bool _isLoaded;
@@ -73,6 +75,7 @@ public sealed partial class ActivityView : UserControl
         _trackingService = trackingService;
         _minimumActivityDuration = minimumActivityDuration;
         InitializeComponent();
+        TimelineList.ItemsSource = _softwareUsageItems;
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
         _refreshTimer.Tick += OnRefreshTimerTick;
         _fastToolTipTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
@@ -540,8 +543,82 @@ public sealed partial class ActivityView : UserControl
         EmptyTimeline.Visibility = _timelineItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ActivityDetailsHeader.Visibility = _timelineItems.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         TimelineList.Visibility = _timelineItems.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-        TimelineList.ItemsSource = BuildSoftwareUsageItems(_timelineItems);
+        UpdateSoftwareUsageItems(BuildSoftwareUsageItems(_timelineItems));
         RenderTimelineCanvas();
+    }
+
+    private void UpdateSoftwareUsageItems(IReadOnlyList<SoftwareUsageItem> updatedItems)
+    {
+        for (var targetIndex = 0; targetIndex < updatedItems.Count; targetIndex++)
+        {
+            var updatedItem = updatedItems[targetIndex];
+            var existingIndex = FindSoftwareUsageItemIndex(updatedItem, targetIndex);
+            if (existingIndex < 0)
+            {
+                _softwareUsageItems.Insert(targetIndex, updatedItem);
+                continue;
+            }
+
+            if (existingIndex != targetIndex)
+            {
+                _softwareUsageItems.Move(existingIndex, targetIndex);
+            }
+
+            if (!HasSameSoftwareUsageContent(_softwareUsageItems[targetIndex], updatedItem))
+            {
+                _softwareUsageItems[targetIndex] = updatedItem;
+            }
+        }
+
+        while (_softwareUsageItems.Count > updatedItems.Count)
+        {
+            _softwareUsageItems.RemoveAt(_softwareUsageItems.Count - 1);
+        }
+    }
+
+    private int FindSoftwareUsageItemIndex(SoftwareUsageItem item, int startIndex)
+    {
+        for (var index = startIndex; index < _softwareUsageItems.Count; index++)
+        {
+            if (HasSameSoftwareUsageIdentity(_softwareUsageItems[index], item))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool HasSameSoftwareUsageIdentity(SoftwareUsageItem left, SoftwareUsageItem right)
+    {
+        var leftHasDomain = !string.IsNullOrWhiteSpace(left.WebsiteDomain);
+        var rightHasDomain = !string.IsNullOrWhiteSpace(right.WebsiteDomain);
+        return leftHasDomain || rightHasDomain
+            ? leftHasDomain
+              && rightHasDomain
+              && string.Equals(left.WebsiteDomain, right.WebsiteDomain, StringComparison.OrdinalIgnoreCase)
+            : string.Equals(left.ProcessName, right.ProcessName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasSameSoftwareUsageContent(SoftwareUsageItem left, SoftwareUsageItem right)
+    {
+        return string.Equals(left.DisplayName, right.DisplayName, StringComparison.Ordinal)
+               && string.Equals(left.Subtitle, right.Subtitle, StringComparison.Ordinal)
+               && string.Equals(left.DurationText, right.DurationText, StringComparison.Ordinal)
+               && left.FilledWidth.Equals(right.FilledWidth)
+               && left.RemainingWidth.Equals(right.RemainingWidth)
+               && left.CategoryId == right.CategoryId
+               && BrushesHaveSameColor(left.CategoryBrush, right.CategoryBrush)
+               && left.Activities.Select(item => item.Activity)
+                   .SequenceEqual(right.Activities.Select(item => item.Activity));
+    }
+
+    private static bool BrushesHaveSameColor(Brush left, Brush right)
+    {
+        return ReferenceEquals(left, right)
+               || left is SolidColorBrush leftBrush
+               && right is SolidColorBrush rightBrush
+               && leftBrush.Color == rightBrush.Color;
     }
 
     private static IReadOnlyList<SoftwareUsageItem> BuildSoftwareUsageItems(

@@ -75,6 +75,11 @@
                         <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="CSV 默认导出到“文档\SikaTimeTracker”。清空活动不会删除分类、规则和设置。" TextWrapping="Wrap" />
                     </StackPanel>
                 </Border>
+
+                <TextBlock
+                    x:Name="VersionText"
+                    HorizontalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
             </StackPanel>
         </ScrollViewer>
         <ProgressRing x:Name="BusyIndicator" Width="36" Height="36" IsActive="False" Visibility="Collapsed" />

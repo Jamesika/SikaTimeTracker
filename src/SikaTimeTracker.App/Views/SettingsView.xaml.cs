@@ -37,6 +37,7 @@ public sealed partial class SettingsView : UserControl
         _dataDirectory = dataDirectory;
         _applyPreferences = applyPreferences;
         InitializeComponent();
+        VersionText.Text = GetVersionText();
         PopulateControls();
         _baselinePreferences = ReadPreferencesFromControls();
     }
@@ -231,6 +232,14 @@ public sealed partial class SettingsView : UserControl
     private static int GetNumber(NumberBox box, int fallback)
     {
         return double.IsNaN(box.Value) ? fallback : checked((int)box.Value);
+    }
+
+    private static string GetVersionText()
+    {
+        var version = typeof(SettingsView).Assembly.GetName().Version;
+        return version is null
+            ? "Sika Time Tracker"
+            : $"Sika Time Tracker v{version.Major}.{version.Minor}.{version.Build}";
     }
 
     private void ShowMessage(string message, InfoBarSeverity severity)
