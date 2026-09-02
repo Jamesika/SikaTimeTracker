@@ -428,15 +428,29 @@ public sealed partial class ActivityView : UserControl
                 RadiusY = 2,
                 Tag = date
             };
-            cell.PointerEntered += (_, _) =>
+            cell.PointerEntered += (sender, _) =>
             {
-                if (_heatmapToolTipTexts.TryGetValue(date, out var text))
+                if (sender is FrameworkElement hoveredCell
+                    && hoveredCell.Tag is DateOnly hoveredDate
+                    && _heatmapToolTipTexts.TryGetValue(hoveredDate, out var text))
                 {
-                    QueueFastToolTip(cell, text);
+                    QueueFastToolTip(hoveredCell, text);
                 }
             };
-            cell.PointerExited += (_, _) => HideFastToolTip(cell);
-            cell.PointerCanceled += (_, _) => HideFastToolTip(cell);
+            cell.PointerExited += (sender, _) =>
+            {
+                if (sender is FrameworkElement hoveredCell)
+                {
+                    HideFastToolTip(hoveredCell);
+                }
+            };
+            cell.PointerCanceled += (sender, _) =>
+            {
+                if (sender is FrameworkElement hoveredCell)
+                {
+                    HideFastToolTip(hoveredCell);
+                }
+            };
             cell.Tapped += OnHeatmapDayClicked;
             Grid.SetColumn(cell, week);
             Grid.SetRow(cell, day);

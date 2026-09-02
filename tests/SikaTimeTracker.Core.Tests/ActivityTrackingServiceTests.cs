@@ -30,6 +30,28 @@ public sealed class ActivityTrackingServiceTests
     }
 
     [TestMethod]
+    public async Task HealthCheck_RecoversWhenSessionSwitchEventWasMissed()
+    {
+        var start = DateTimeOffset.UtcNow;
+        var fixture = await TrackingFixture.CreateAsync(start);
+        await using var tracker = fixture.Tracker;
+
+        fixture.System.IsInteractive = false;
+        await tracker.ProcessHealthCheckAsync(start.AddSeconds(30));
+
+        Assert.HasCount(1, fixture.Store.Activities);
+        Assert.AreEqual(start.AddSeconds(30), fixture.Store.Activities[0].EndTimeUtc);
+        Assert.IsFalse(tracker.Status.IsSystemInteractive);
+
+        fixture.System.IsInteractive = true;
+        await tracker.ProcessHealthCheckAsync(start.AddMinutes(30));
+
+        Assert.HasCount(2, fixture.Store.Activities);
+        Assert.AreEqual(start.AddMinutes(30), fixture.Store.Activities[1].StartTimeUtc);
+        Assert.IsTrue(tracker.Status.IsSystemInteractive);
+    }
+
+    [TestMethod]
     public async Task IdleThreshold_StopsAtThresholdBoundary()
     {
         var start = DateTimeOffset.UtcNow;
@@ -94,6 +116,21 @@ public sealed class ActivityTrackingServiceTests
     }
 
     [TestMethod]
+    public async Task ForegroundChange_ToLockAppStopsCurrentActivity()
+    {
+        var start = DateTimeOffset.UtcNow;
+        var fixture = await TrackingFixture.CreateAsync(start);
+        await using var tracker = fixture.Tracker;
+
+        await tracker.ProcessForegroundWindowAsync(
+            new WindowSnapshot(2, "LockApp", string.Empty, start.AddMinutes(3)));
+
+        Assert.HasCount(1, fixture.Store.Activities);
+        Assert.AreEqual(start.AddMinutes(3), fixture.Store.Activities[0].EndTimeUtc);
+        Assert.IsFalse(tracker.Status.IsTracking);
+    }
+
+    [TestMethod]
     public async Task BrowserDomainChange_StartsANewActivityEvenWhenWindowTitleIsUnchanged()
     {
         var start = DateTimeOffset.UtcNow;
@@ -127,6 +164,7 @@ public sealed class ActivityTrackingServiceTests
 
     [TestMethod]
     [DataRow("explorer.exe")]
+    [DataRow("LockApp.exe")]
     [DataRow("SikaTimeTracker")]
     public async Task ExcludedProcess_IsNotRecorded(string processName)
     {

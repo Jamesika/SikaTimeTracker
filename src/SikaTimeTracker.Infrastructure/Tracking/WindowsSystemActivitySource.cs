@@ -9,6 +9,12 @@ namespace SikaTimeTracker.Infrastructure.Tracking;
 [SupportedOSPlatform("windows")]
 public sealed class WindowsSystemActivitySource : ISystemActivitySource
 {
+    private const uint WtsCurrentSession = uint.MaxValue;
+    private const int WtsSessionInfoEx = 25;
+    private const uint WtsInfoExLevelNumber = 1;
+    private const int WtsSessionLocked = 0;
+    private const int WtsSessionUnlocked = 1;
+
     private bool _isSessionConnected = true;
     private bool _isPowerActive = true;
     private bool _isStarted;
@@ -16,7 +22,16 @@ public sealed class WindowsSystemActivitySource : ISystemActivitySource
 
     public event EventHandler<SystemActivityChangedEventArgs>? SystemActivityChanged;
 
-    public bool IsSessionInteractive => _isSessionConnected && _isPowerActive;
+    public bool IsSessionInteractive
+    {
+        get
+        {
+            RefreshSessionConnectionState();
+            return CurrentIsSessionInteractive;
+        }
+    }
+
+    private bool CurrentIsSessionInteractive => _isSessionConnected && _isPowerActive;
 
     public void Start()
     {
@@ -118,9 +133,47 @@ public sealed class WindowsSystemActivitySource : ISystemActivitySource
         SystemActivityChanged?.Invoke(
             this,
             new SystemActivityChangedEventArgs(
-                IsSessionInteractive,
+                CurrentIsSessionInteractive,
                 DateTimeOffset.UtcNow,
                 reason));
+    }
+
+    private void RefreshSessionConnectionState()
+    {
+        nint buffer = 0;
+        try
+        {
+            if (!WTSQuerySessionInformation(
+                    0,
+                    WtsCurrentSession,
+                    WtsSessionInfoEx,
+                    out buffer,
+                    out var returnedBytes)
+                || buffer == 0
+                || returnedBytes < Marshal.SizeOf<WtsInfoEx>())
+            {
+                return;
+            }
+
+            var sessionInfo = Marshal.PtrToStructure<WtsInfoEx>(buffer);
+            if (sessionInfo.Level != WtsInfoExLevelNumber)
+            {
+                return;
+            }
+
+            var sessionFlags = sessionInfo.Data.Level1.SessionFlags;
+            if (sessionFlags is WtsSessionLocked or WtsSessionUnlocked)
+            {
+                _isSessionConnected = sessionFlags == WtsSessionUnlocked;
+            }
+        }
+        finally
+        {
+            if (buffer != 0)
+            {
+                WTSFreeMemory(buffer);
+            }
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -130,7 +183,44 @@ public sealed class WindowsSystemActivitySource : ISystemActivitySource
         public uint Time;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WtsInfoEx
+    {
+        public uint Level;
+        public WtsInfoExLevel Data;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct WtsInfoExLevel
+    {
+        [FieldOffset(0)]
+        public long Alignment;
+
+        [FieldOffset(0)]
+        public WtsInfoExLevel1Prefix Level1;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WtsInfoExLevel1Prefix
+    {
+        public uint SessionId;
+        public int SessionState;
+        public int SessionFlags;
+    }
+
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetLastInputInfo(ref LastInputInfo lastInputInfo);
+
+    [DllImport("wtsapi32.dll", EntryPoint = "WTSQuerySessionInformationW", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool WTSQuerySessionInformation(
+        nint serverHandle,
+        uint sessionId,
+        int infoClass,
+        out nint buffer,
+        out uint returnedBytes);
+
+    [DllImport("wtsapi32.dll")]
+    private static extern void WTSFreeMemory(nint memory);
 }

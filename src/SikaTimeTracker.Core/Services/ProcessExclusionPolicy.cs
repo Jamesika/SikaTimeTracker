@@ -5,6 +5,7 @@ public static class ProcessExclusionPolicy
     private static readonly HashSet<string> ExcludedProcessNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "explorer",
+        "LockApp",
         "SikaTimeTracker"
     };
 

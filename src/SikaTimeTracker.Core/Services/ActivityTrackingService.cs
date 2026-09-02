@@ -227,6 +227,19 @@ public sealed class ActivityTrackingService : IAsyncDisposable
 
             _lastHealthCheckUtc = nowUtc;
 
+            var isSystemInteractive = _systemSource.IsSessionInteractive;
+            if (_isSystemInteractive != isSystemInteractive)
+            {
+                _isSystemInteractive = isSystemInteractive;
+                if (!_isSystemInteractive)
+                {
+                    await StopCurrentActivityAsync(nowUtc, cancellationToken);
+                    return;
+                }
+
+                _isIdle = IsIdle();
+            }
+
             if (_isPaused || !_isSystemInteractive)
             {
                 return;
