@@ -32,4 +32,13 @@
     <ProjectReference Include="..\SikaTimeTracker.Core\SikaTimeTracker.Core.csproj" />
     <ProjectReference Include="..\SikaTimeTracker.Infrastructure\SikaTimeTracker.Infrastructure.csproj" />
   </ItemGroup>
+
+  <!-- The SDK's manifest cache does not include PublishSingleFile in its inputs.
+       Regenerate it when switching between normal builds and single-file publish
+       so WinUI DLLs resolve from the bundle extraction directory. -->
+  <Target Name="RefreshWinUiRegistrationManifest"
+          BeforeTargets="CreateWinRTRegistration"
+          Condition="'$(WindowsAppSDKSelfContained)' == 'true' and '$(SelfContainedIntermediateOutputPath)' != ''">
+    <Delete Files="$(SelfContainedIntermediateOutputPath)Manifests\app.manifest" />
+  </Target>
 </Project>
