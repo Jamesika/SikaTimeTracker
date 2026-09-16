@@ -142,6 +142,7 @@ public sealed class SqliteActivityStoreTests
             IdleDetectionEnabled = false,
             IdleThresholdMinutes = 12,
             MinimumActivitySeconds = 4,
+            MergeGapSeconds = 25,
             RecordWindowTitles = false,
             Theme = AppTheme.Dark
         };
@@ -159,13 +160,20 @@ public sealed class SqliteActivityStoreTests
     }
 
     [TestMethod]
-    public async Task DefaultPreferences_UseFifteenSecondMinimumActivity()
+    public async Task DefaultPreferences_UseFiveMinuteIdleFiveSecondMinimumAndSixtySecondMergeGap()
     {
         var settings = new ApplicationSettingsService(_store);
 
         var preferences = await settings.LoadAsync();
 
-        Assert.AreEqual(15, preferences.MinimumActivitySeconds);
+        Assert.AreEqual(5, preferences.IdleThresholdMinutes);
+        Assert.AreEqual(5, preferences.MinimumActivitySeconds);
+        Assert.AreEqual(60, preferences.MergeGapSeconds);
+        Assert.AreEqual(new AppPreferences(), preferences);
+        var tracking = new ActivityTrackingOptions();
+        Assert.AreEqual(TimeSpan.FromMinutes(5), tracking.IdleThreshold);
+        Assert.AreEqual(TimeSpan.FromSeconds(5), tracking.MinimumActivityDuration);
+        Assert.AreEqual(TimeSpan.FromSeconds(60), tracking.AdjacentMergeGap);
     }
 
     [TestMethod]

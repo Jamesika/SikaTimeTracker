@@ -30,6 +30,7 @@ public sealed class TaskbarStatusWindow : IDisposable
     private readonly nint _windowHandle;
     private WeeklyWorkSummary? _summary;
     private TimeSpan _minimumActivityDuration;
+    private TimeSpan _maximumMergeGap;
     private bool _isCompact;
     private bool _isRefreshing;
     private bool _isVisible;
@@ -44,6 +45,7 @@ public sealed class TaskbarStatusWindow : IDisposable
         IActivityStore store,
         ActivityTrackingService trackingService,
         TimeSpan minimumActivityDuration,
+        TimeSpan maximumMergeGap,
         AppTheme theme,
         Func<bool> isMainWindowForeground,
         Action<bool> toggleMainWindow)
@@ -51,6 +53,7 @@ public sealed class TaskbarStatusWindow : IDisposable
         _store = store;
         _trackingService = trackingService;
         _minimumActivityDuration = minimumActivityDuration;
+        _maximumMergeGap = maximumMergeGap;
         _isMainWindowForeground = isMainWindowForeground;
         _toggleMainWindow = toggleMainWindow;
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread();
@@ -93,6 +96,7 @@ public sealed class TaskbarStatusWindow : IDisposable
     public void ApplyPreferences(AppPreferences preferences)
     {
         _minimumActivityDuration = TimeSpan.FromSeconds(preferences.MinimumActivitySeconds);
+        _maximumMergeGap = TimeSpan.FromSeconds(preferences.MergeGapSeconds);
         ApplyTheme(preferences.Theme);
         _ = RefreshSummaryAsync();
     }
@@ -337,13 +341,14 @@ public sealed class TaskbarStatusWindow : IDisposable
             var weekStart = today.AddDays(-daysSinceMonday);
             var (rangeStartUtc, _) = ActivityStatisticsService.GetDayBoundsUtc(weekStart, TimeZoneInfo.Local);
             var categories = await _store.GetCategoriesAsync();
-            var activities = await _store.GetActivitiesAsync(rangeStartUtc, nowUtc);
+            var activities = await _store.GetActivitiesAsync(rangeStartUtc - _maximumMergeGap, nowUtc);
             var summary = _summaryService.Calculate(
                 activities,
                 categories,
                 nowUtc,
                 TimeZoneInfo.Local,
-                _minimumActivityDuration);
+                _minimumActivityDuration,
+                _maximumMergeGap);
             _dispatcherQueue.TryEnqueue(() =>
             {
                 if (_disposed)

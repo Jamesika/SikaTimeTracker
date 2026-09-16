@@ -18,10 +18,12 @@ public sealed partial class ActivityView : UserControl
     private const string AllCategoriesSettingValue = "All";
     private const double MinimumHeatmapCellSize = 13;
     private const double HeatmapCellSpacing = 3;
-    private const double MinimumTimelinePixelsPerHour = 48;
+    private const double MinimumTimelinePixelsPerHour = 72;
+    private const double MaximumTimelineZoom = 32;
     private readonly IActivityStore _store;
     private readonly ActivityTrackingService _trackingService;
     private TimeSpan _minimumActivityDuration;
+    private TimeSpan _maximumMergeGap;
     private readonly ActivityStatisticsService _statistics = new();
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.Local;
     private readonly DispatcherTimer _refreshTimer;
@@ -43,6 +45,7 @@ public sealed partial class ActivityView : UserControl
     private bool _isRestoringCategoryFilter;
     private double _lastHeatmapViewportWidth;
     private double _lastTimelineViewportWidth;
+    private double _timelineZoom = 1;
     private FrameworkElement? _pendingFastToolTipTarget;
     private readonly Dictionary<DateOnly, Rectangle> _heatmapCells = new();
     private readonly Dictionary<DateOnly, string> _heatmapToolTipTexts = new();
@@ -52,11 +55,14 @@ public sealed partial class ActivityView : UserControl
     private static readonly SolidColorBrush[] IntensityBrushes =
     [
         new(Windows.UI.Color.FromArgb(26, 140, 149, 159)),
-        new(Windows.UI.Color.FromArgb(255, 155, 233, 168)),
-        new(Windows.UI.Color.FromArgb(255, 64, 196, 99)),
-        new(Windows.UI.Color.FromArgb(255, 48, 161, 78)),
-        new(Windows.UI.Color.FromArgb(255, 40, 136, 68)),
-        new(Windows.UI.Color.FromArgb(255, 33, 110, 57))
+        new(Windows.UI.Color.FromArgb(255, 184, 253, 173)),
+        new(Windows.UI.Color.FromArgb(255, 139, 235, 120)),
+        new(Windows.UI.Color.FromArgb(255, 80, 208, 51)),
+        new(Windows.UI.Color.FromArgb(255, 51, 164, 27)),
+        new(Windows.UI.Color.FromArgb(255, 35, 125, 16)),
+        new(Windows.UI.Color.FromArgb(255, 27, 101, 8)),
+        new(Windows.UI.Color.FromArgb(255, 18, 82, 2)),
+        new(Windows.UI.Color.FromArgb(255, 254, 184, 0))
     ];
 
     private static readonly SolidColorBrush SelectionStrokeBrush = new(Microsoft.UI.Colors.White);
@@ -64,7 +70,8 @@ public sealed partial class ActivityView : UserControl
     public ActivityView(
         IActivityStore store,
         ActivityTrackingService trackingService,
-        TimeSpan minimumActivityDuration)
+        TimeSpan minimumActivityDuration,
+        TimeSpan maximumMergeGap)
     {
         if (minimumActivityDuration < TimeSpan.Zero)
         {
@@ -74,6 +81,8 @@ public sealed partial class ActivityView : UserControl
         _store = store;
         _trackingService = trackingService;
         _minimumActivityDuration = minimumActivityDuration;
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumMergeGap, TimeSpan.Zero);
+        _maximumMergeGap = maximumMergeGap;
         InitializeComponent();
         TimelineList.ItemsSource = _softwareUsageItems;
         _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
@@ -131,19 +140,21 @@ public sealed partial class ActivityView : UserControl
         }
     }
 
-    public void ApplyMinimumActivityDuration(TimeSpan minimumActivityDuration)
+    public void ApplyActivityPreferences(TimeSpan minimumActivityDuration, TimeSpan maximumMergeGap)
     {
         if (minimumActivityDuration < TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(minimumActivityDuration));
         }
 
-        if (_minimumActivityDuration == minimumActivityDuration)
+        ArgumentOutOfRangeException.ThrowIfLessThan(maximumMergeGap, TimeSpan.Zero);
+        if (_minimumActivityDuration == minimumActivityDuration && _maximumMergeGap == maximumMergeGap)
         {
             return;
         }
 
         _minimumActivityDuration = minimumActivityDuration;
+        _maximumMergeGap = maximumMergeGap;
         RequestRefresh();
     }
 
@@ -291,9 +302,8 @@ public sealed partial class ActivityView : UserControl
             var lastDate = new DateOnly(_selectedYear, 12, 31);
             var (rangeStartUtc, _) = ActivityStatisticsService.GetDayBoundsUtc(firstDate, _timeZone);
             var (_, rangeEndUtc) = ActivityStatisticsService.GetDayBoundsUtc(lastDate, _timeZone);
-            _activities = (await _store.GetActivitiesAsync(rangeStartUtc, rangeEndUtc))
-                .Where(activity => ActivityDisplayPolicy.ShouldDisplay(activity, _minimumActivityDuration))
-                .ToArray();
+            _activities = await _store.GetActivitiesAsync(
+                rangeStartUtc - _maximumMergeGap, rangeEndUtc + _maximumMergeGap);
 #if DEBUG
             PerfDiagnostics.Log(
                 $"RefreshAsync: query+filter {refreshStopwatch.ElapsedMilliseconds}ms, activities={_activities.Count}");
@@ -341,7 +351,9 @@ public sealed partial class ActivityView : UserControl
             firstDate,
             lastDate,
             _timeZone,
-            categoryId);
+            categoryId,
+            _maximumMergeGap,
+            _minimumActivityDuration);
 #if DEBUG
         PerfDiagnostics.Log($"  BuildDailyTotals: {renderStopwatch.ElapsedMilliseconds}ms");
         renderStopwatch.Restart();
@@ -531,7 +543,9 @@ public sealed partial class ActivityView : UserControl
             _activities,
             _selectedDate,
             _timeZone,
-            SelectedCategoryId);
+            SelectedCategoryId,
+            _maximumMergeGap,
+            _minimumActivityDuration);
         var categoriesById = _categories.ToDictionary(category => category.Id);
         _timelineItems = timeline.Select(activity =>
         {
@@ -540,6 +554,10 @@ public sealed partial class ActivityView : UserControl
             var title = string.IsNullOrWhiteSpace(activity.WindowTitle)
                 ? appName
                 : activity.WindowTitle;
+            if (activity.SourceSegmentCount > 1)
+            {
+                title = $"已合并 {activity.SourceSegmentCount} 段连续活动（含短暂间隙）\n末段窗口：{title}";
+            }
             return new TimelineDisplayItem(
                 activity,
                 $"{activity.StartLocal:HH:mm}–{activity.EndLocal:HH:mm}",
@@ -552,8 +570,10 @@ public sealed partial class ActivityView : UserControl
         }).ToArray();
 
         TimelineTitleText.Text = $"{_selectedDate:yyyy年M月d日} 时间轴";
-        TimelineSummaryText.Text = $"共 {_timelineItems.Count} 段活动，累计 {FormatDuration(timeline.Aggregate(TimeSpan.Zero, (sum, item) => sum + item.Duration))}";
+        var timelineDuration = ActivityDurationCalculator.Calculate(timeline.Select(item => (item.StartLocal, item.EndLocal)));
+        TimelineSummaryText.Text = $"共 {_timelineItems.Count} 段活动，累计 {FormatDuration(timelineDuration)}";
         TimelineViewport.Visibility = _timelineItems.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        TimelineZoomHint.Visibility = TimelineViewport.Visibility;
         EmptyTimeline.Visibility = _timelineItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ActivityDetailsHeader.Visibility = _timelineItems.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         TimelineList.Visibility = _timelineItems.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -647,10 +667,12 @@ public sealed partial class ActivityView : UserControl
             .Select(group =>
             {
                 var items = group.ToArray();
-                var duration = TimeSpan.FromTicks(items.Sum(item => item.Activity.Duration.Ticks));
+                var duration = ActivityDurationCalculator.Calculate(items.Select(item =>
+                    (item.Activity.StartLocal, item.Activity.EndLocal)));
                 var dominantCategory = items
                     .GroupBy(item => item.CategoryName, StringComparer.OrdinalIgnoreCase)
-                    .OrderByDescending(category => category.Sum(item => item.Activity.Duration.Ticks))
+                    .OrderByDescending(category => ActivityDurationCalculator.Calculate(category.Select(item =>
+                        (item.Activity.StartLocal, item.Activity.EndLocal))))
                     .First();
                 var representative = dominantCategory.First();
                 var domain = items
@@ -712,7 +734,7 @@ public sealed partial class ActivityView : UserControl
         var visibleMinutes = visibleEndMinutes - visibleStartMinutes;
         var width = Math.Max(
             TimelineViewport.ActualWidth - 2,
-            visibleMinutes / 60d * MinimumTimelinePixelsPerHour);
+            visibleMinutes / 60d * MinimumTimelinePixelsPerHour) * _timelineZoom;
         TimelineCanvas.Width = width;
         var trackTop = 38d;
         var laneHeight = 44d;
@@ -742,13 +764,7 @@ public sealed partial class ActivityView : UserControl
 
         var startHour = (int)(visibleStartMinutes / 60d);
         var endHour = (int)(visibleEndMinutes / 60d);
-        var tickIntervalHours = endHour - startHour <= 8 ? 1 : 2;
-        var tickHours = Enumerable.Range(startHour, endHour - startHour + 1)
-            .Where(hour => hour == startHour
-                           || hour == endHour
-                           || (hour - startHour) % tickIntervalHours == 0)
-            .Distinct()
-            .OrderBy(hour => hour);
+        var tickHours = Enumerable.Range(startHour, endHour - startHour + 1);
         foreach (var hour in tickHours)
         {
             var x = width * (hour * 60d - visibleStartMinutes) / visibleMinutes;
@@ -844,6 +860,38 @@ public sealed partial class ActivityView : UserControl
 
         _lastHeatmapViewportWidth = args.NewSize.Width;
         RenderHeatmap(new DateOnly(_selectedYear, 1, 1), new DateOnly(_selectedYear, 12, 31));
+    }
+
+    private void OnTimelinePointerWheelChanged(object sender, PointerRoutedEventArgs args)
+    {
+        var point = args.GetCurrentPoint(TimelineViewport);
+        if (_timelineItems.Count == 0 || point.Properties.IsHorizontalMouseWheel)
+        {
+            return;
+        }
+
+        // Consume vertical wheel input here before the surrounding scroll viewers handle it.
+        args.Handled = true;
+        var zoom = Math.Clamp(
+            _timelineZoom * Math.Pow(1.2, point.Properties.MouseWheelDelta / 120d),
+            1,
+            MaximumTimelineZoom);
+        if (Math.Abs(zoom - _timelineZoom) < 0.0001)
+        {
+            return;
+        }
+
+        var pointerX = Math.Clamp(point.Position.X, 0, TimelineViewport.ViewportWidth);
+        var anchor = (TimelineViewport.HorizontalOffset + pointerX) / TimelineCanvas.Width;
+        _timelineZoom = zoom;
+        RenderTimelineCanvas();
+        TimelineViewport.UpdateLayout();
+        TimelineViewport.ChangeView(
+            Math.Clamp(anchor * TimelineCanvas.Width - pointerX, 0, TimelineViewport.ScrollableWidth),
+            null,
+            null,
+            disableAnimation: true);
+        TimelineZoomHint.Text = $"滚轮向上放大，向下缩小 · 拖动横向滚动条查看其他时段 · {_timelineZoom:P0}";
     }
 
     private void OnTimelineViewportSizeChanged(object sender, SizeChangedEventArgs args)
@@ -1028,7 +1076,7 @@ public sealed partial class ActivityView : UserControl
         {
             details.Children.Add(new TextBlock { Text = item.Activity.WebsiteDomain });
         }
-        details.Children.Add(new TextBlock { Text = item.Activity.WindowTitle, TextWrapping = TextWrapping.Wrap });
+        details.Children.Add(new TextBlock { Text = item.Title, TextWrapping = TextWrapping.Wrap });
         var isWebsite = !string.IsNullOrWhiteSpace(item.Activity.WebsiteDomain);
         details.Children.Add(new TextBlock
         {
@@ -1079,12 +1127,15 @@ public sealed partial class ActivityView : UserControl
     {
         return duration switch
         {
-            { TotalMinutes: <= 20 } => IntensityBrushes[0],
-            { TotalHours: < 2 } => IntensityBrushes[1],
-            { TotalHours: < 4 } => IntensityBrushes[2],
-            { TotalHours: < 6 } => IntensityBrushes[3],
-            { TotalHours: < 8 } => IntensityBrushes[4],
-            _ => IntensityBrushes[5]
+            { TotalHours: <= 0 } => IntensityBrushes[0],
+            { TotalHours: <= 1 } => IntensityBrushes[1],
+            { TotalHours: <= 2 } => IntensityBrushes[2],
+            { TotalHours: <= 3 } => IntensityBrushes[3],
+            { TotalHours: <= 4 } => IntensityBrushes[4],
+            { TotalHours: <= 5 } => IntensityBrushes[5],
+            { TotalHours: <= 6 } => IntensityBrushes[6],
+            { TotalHours: <= 7 } => IntensityBrushes[7],
+            _ => IntensityBrushes[8]
         };
     }
 

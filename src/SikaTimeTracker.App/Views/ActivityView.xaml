@@ -65,12 +65,15 @@
                             <TextBlock Style="{StaticResource SectionTitleStyle}" Text="活动热力图" />
                             <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="5">
                                 <TextBlock Margin="0,0,4,0" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="少" />
-                                <Border Width="11" Height="11" Background="#1A8C959F" CornerRadius="2" />
-                                <Border Width="11" Height="11" Background="#9BE9A8" CornerRadius="2" />
-                                <Border Width="11" Height="11" Background="#40C463" CornerRadius="2" />
-                                <Border Width="11" Height="11" Background="#30A14E" CornerRadius="2" />
-                                <Border Width="11" Height="11" Background="#288844" CornerRadius="2" />
-                                <Border Width="11" Height="11" Background="#216E39" CornerRadius="2" />
+                                <Border Width="11" Height="11" Background="#1A8C959F" CornerRadius="2" ToolTipService.ToolTip="0 小时" />
+                                <Border Width="11" Height="11" Background="#B8FDAD" CornerRadius="2" ToolTipService.ToolTip="大于 0 小时，至 1 小时（含）" />
+                                <Border Width="11" Height="11" Background="#8BEB78" CornerRadius="2" ToolTipService.ToolTip="大于 1 小时，至 2 小时（含）" />
+                                <Border Width="11" Height="11" Background="#50D033" CornerRadius="2" ToolTipService.ToolTip="大于 2 小时，至 3 小时（含）" />
+                                <Border Width="11" Height="11" Background="#33A41B" CornerRadius="2" ToolTipService.ToolTip="大于 3 小时，至 4 小时（含）" />
+                                <Border Width="11" Height="11" Background="#237D10" CornerRadius="2" ToolTipService.ToolTip="大于 4 小时，至 5 小时（含）" />
+                                <Border Width="11" Height="11" Background="#1B6508" CornerRadius="2" ToolTipService.ToolTip="大于 5 小时，至 6 小时（含）" />
+                                <Border Width="11" Height="11" Background="#125202" CornerRadius="2" ToolTipService.ToolTip="大于 6 小时，至 7 小时（含）" />
+                                <Border Width="11" Height="11" Background="#FEB800" CornerRadius="2" ToolTipService.ToolTip="大于 7 小时（超过 8 小时沿用此色）" />
                                 <TextBlock Margin="4,0,0,0" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="多" />
                             </StackPanel>
                         </Grid>
@@ -105,13 +108,22 @@
                                 HorizontalScrollMode="Enabled"
                                 SizeChanged="OnTimelineViewportSizeChanged"
                                 VerticalScrollMode="Disabled">
-                                <Canvas x:Name="TimelineCanvas" Height="96" />
+                                <Canvas
+                                    x:Name="TimelineCanvas"
+                                    Height="96"
+                                    Background="Transparent"
+                                    PointerWheelChanged="OnTimelinePointerWheelChanged" />
                             </ScrollViewer>
                             <StackPanel x:Name="EmptyTimeline" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
                                 <FontIcon Glyph="&#xE823;" FontSize="28" />
                                 <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="这一天没有活动记录" />
                             </StackPanel>
                         </Grid>
+                        <TextBlock
+                            x:Name="TimelineZoomHint"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            Text="滚轮向上放大，向下缩小 · 拖动横向滚动条查看其他时段 · 100%"
+                            TextWrapping="Wrap" />
                         <Grid x:Name="ActivityDetailsHeader" Margin="0,2,0,0">
                             <TextBlock Style="{StaticResource SectionTitleStyle}" Text="软件使用情况" />
                             <TextBlock

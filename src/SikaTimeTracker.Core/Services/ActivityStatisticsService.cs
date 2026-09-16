@@ -9,19 +9,24 @@ public sealed class ActivityStatisticsService
         DateOnly firstDate,
         DateOnly lastDate,
         TimeZoneInfo timeZone,
-        long? categoryId = null)
+        long? categoryId = null,
+        TimeSpan? maximumMergeGap = null,
+        TimeSpan minimumActivityDuration = default)
     {
         if (lastDate < firstDate)
         {
             throw new ArgumentOutOfRangeException(nameof(lastDate));
         }
 
-        var filtered = activities
+        var filtered = ActivitySessionMerger.Build(
+                activities, maximumMergeGap ?? TimeSpan.FromSeconds(AppPreferences.DefaultMergeGapSeconds), minimumActivityDuration)
+            .Select(session => session.Activity)
             .Where(activity => !categoryId.HasValue || activity.CategoryId == categoryId.Value)
             .ToArray();
         var dayCount = lastDate.DayNumber - firstDate.DayNumber + 1;
         var offset = firstDate.DayNumber;
-        var ticksByDay = new long[dayCount];
+        var intervalsByDay = Enumerable.Range(0, dayCount)
+            .Select(_ => new List<(DateTimeOffset Start, DateTimeOffset End)>()).ToArray();
         foreach (var activity in filtered)
         {
             var effectiveEndUtc = activity.EffectiveEndTimeUtc;
@@ -40,14 +45,17 @@ public sealed class ActivityStatisticsService
                 }
 
                 var (dayStartUtc, dayEndUtc) = GetDayBoundsUtc(date, timeZone);
-                ticksByDay[date.DayNumber - offset] += GetOverlap(activity, dayStartUtc, dayEndUtc).Ticks;
+                intervalsByDay[date.DayNumber - offset].Add((
+                    activity.StartTimeUtc > dayStartUtc ? activity.StartTimeUtc : dayStartUtc,
+                    effectiveEndUtc < dayEndUtc ? effectiveEndUtc : dayEndUtc));
             }
         }
 
         var totals = new List<DailyActivityTotal>(dayCount);
         for (var date = firstDate; date <= lastDate; date = date.AddDays(1))
         {
-            totals.Add(new DailyActivityTotal(date, TimeSpan.FromTicks(ticksByDay[date.DayNumber - offset])));
+            totals.Add(new DailyActivityTotal(date,
+                ActivityDurationCalculator.Calculate(intervalsByDay[date.DayNumber - offset])));
         }
 
         return totals;
@@ -57,17 +65,21 @@ public sealed class ActivityStatisticsService
         IEnumerable<ActivitySegment> activities,
         DateOnly date,
         TimeZoneInfo timeZone,
-        long? categoryId = null)
+        long? categoryId = null,
+        TimeSpan? maximumMergeGap = null,
+        TimeSpan minimumActivityDuration = default)
     {
         var (dayStartUtc, dayEndUtc) = GetDayBoundsUtc(date, timeZone);
-        return activities
-            .Where(activity => !categoryId.HasValue || activity.CategoryId == categoryId.Value)
-            .Select(activity =>
+        return ActivitySessionMerger.Build(
+                activities, maximumMergeGap ?? TimeSpan.FromSeconds(AppPreferences.DefaultMergeGapSeconds), minimumActivityDuration)
+            .Where(session => !categoryId.HasValue || session.Activity.CategoryId == categoryId.Value)
+            .Select(session =>
             {
+                var activity = session.Activity;
                 var startUtc = activity.StartTimeUtc > dayStartUtc ? activity.StartTimeUtc : dayStartUtc;
                 var effectiveEndUtc = activity.EffectiveEndTimeUtc;
                 var endUtc = effectiveEndUtc < dayEndUtc ? effectiveEndUtc : dayEndUtc;
-                return (Activity: activity, StartUtc: startUtc, EndUtc: endUtc);
+                return (Activity: activity, StartUtc: startUtc, EndUtc: endUtc, session.SegmentCount);
             })
             .Where(item => item.EndUtc > item.StartUtc)
             .OrderBy(item => item.StartUtc)
@@ -80,7 +92,10 @@ public sealed class ActivityStatisticsService
                 item.Activity.WindowTitle,
                 item.Activity.CategoryId,
                 item.Activity.IsManuallyClassified,
-                item.Activity.WebsiteDomain))
+                item.Activity.WebsiteDomain)
+            {
+                SourceSegmentCount = item.SegmentCount
+            })
             .ToArray();
     }
 
@@ -131,14 +146,4 @@ public sealed class ActivityStatisticsService
             new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(localEnd, timeZone), TimeSpan.Zero));
     }
 
-    private static TimeSpan GetOverlap(
-        ActivitySegment activity,
-        DateTimeOffset rangeStartUtc,
-        DateTimeOffset rangeEndUtc)
-    {
-        var startUtc = activity.StartTimeUtc > rangeStartUtc ? activity.StartTimeUtc : rangeStartUtc;
-        var effectiveEndUtc = activity.EffectiveEndTimeUtc;
-        var endUtc = effectiveEndUtc < rangeEndUtc ? effectiveEndUtc : rangeEndUtc;
-        return endUtc > startUtc ? endUtc - startUtc : TimeSpan.Zero;
-    }
 }

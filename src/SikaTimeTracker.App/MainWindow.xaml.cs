@@ -286,8 +286,9 @@ public sealed partial class MainWindow : Window
         ApplyTheme(preferences.Theme);
         if (_pageCache.TryGetValue("activity", out var page) && page is ActivityView activity)
         {
-            activity.ApplyMinimumActivityDuration(
-                TimeSpan.FromSeconds(preferences.MinimumActivitySeconds));
+            activity.ApplyActivityPreferences(
+                TimeSpan.FromSeconds(preferences.MinimumActivitySeconds),
+                TimeSpan.FromSeconds(preferences.MergeGapSeconds));
         }
 
         PreferencesApplied?.Invoke(preferences);
@@ -448,7 +449,8 @@ public sealed partial class MainWindow : Window
                 _ => new ActivityView(
                     _activityStore,
                     _trackingService,
-                    TimeSpan.FromSeconds(_preferences.MinimumActivitySeconds))
+                    TimeSpan.FromSeconds(_preferences.MinimumActivitySeconds),
+                    TimeSpan.FromSeconds(_preferences.MergeGapSeconds))
             };
             _pageCache[tag] = page;
             ContentHost.Children.Add(page);

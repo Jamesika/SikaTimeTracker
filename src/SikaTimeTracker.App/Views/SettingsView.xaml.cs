@@ -156,9 +156,9 @@ public sealed partial class SettingsView : UserControl
             RunAtStartup = RunAtStartupToggle.IsOn,
             StartMinimized = StartMinimizedToggle.IsOn,
             IdleDetectionEnabled = IdleDetectionToggle.IsOn,
-            IdleThresholdMinutes = GetNumber(IdleMinutesBox, 5),
-            MinimumActivitySeconds = GetNumber(MinimumSecondsBox, 15),
-            MergeGapSeconds = GetNumber(MergeGapSecondsBox, 10),
+            IdleThresholdMinutes = GetNumber(IdleMinutesBox, AppPreferences.DefaultIdleThresholdMinutes),
+            MinimumActivitySeconds = GetNumber(MinimumSecondsBox, AppPreferences.DefaultMinimumActivitySeconds),
+            MergeGapSeconds = GetNumber(MergeGapSecondsBox, AppPreferences.DefaultMergeGapSeconds),
             RecordWindowTitles = RecordTitlesToggle.IsOn,
             Theme = (ThemeBox.SelectedItem as ThemeChoice)?.Value ?? AppTheme.System
         };

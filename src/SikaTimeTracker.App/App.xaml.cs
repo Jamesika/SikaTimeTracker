@@ -99,6 +99,7 @@ public partial class App : Application
             _activityStore,
             _trackingService,
             TimeSpan.FromSeconds(preferences.MinimumActivitySeconds),
+            TimeSpan.FromSeconds(preferences.MergeGapSeconds),
             preferences.Theme,
             mainWindow.IsForeground,
             wasForeground => mainWindow.DispatcherQueue.TryEnqueue(

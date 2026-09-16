@@ -9,7 +9,8 @@ public sealed class WeeklyWorkSummaryService
         IEnumerable<Category> categories,
         DateTimeOffset nowUtc,
         TimeZoneInfo timeZone,
-        TimeSpan minimumActivityDuration)
+        TimeSpan minimumActivityDuration,
+        TimeSpan? maximumMergeGap = null)
     {
         ArgumentNullException.ThrowIfNull(activities);
         ArgumentNullException.ThrowIfNull(categories);
@@ -31,21 +32,13 @@ public sealed class WeeklyWorkSummaryService
             return new WeeklyWorkSummary(false, TimeSpan.Zero, weekStartDate);
         }
 
-        var ticks = activities
-            .Where(activity => activity.CategoryId == workCategory.Id
-                               && activity.Duration >= minimumActivityDuration)
-            .Sum(activity => GetOverlap(activity, weekStartUtc, nowUtc).Ticks);
-        return new WeeklyWorkSummary(true, TimeSpan.FromTicks(ticks), weekStartDate);
-    }
-
-    private static TimeSpan GetOverlap(
-        ActivitySegment activity,
-        DateTimeOffset rangeStartUtc,
-        DateTimeOffset rangeEndUtc)
-    {
-        var startUtc = activity.StartTimeUtc > rangeStartUtc ? activity.StartTimeUtc : rangeStartUtc;
-        var effectiveEndUtc = activity.EffectiveEndTimeUtc;
-        var endUtc = effectiveEndUtc < rangeEndUtc ? effectiveEndUtc : rangeEndUtc;
-        return endUtc > startUtc ? endUtc - startUtc : TimeSpan.Zero;
+        var intervals = ActivitySessionMerger.Build(
+                activities, maximumMergeGap ?? TimeSpan.FromSeconds(AppPreferences.DefaultMergeGapSeconds), minimumActivityDuration)
+            .Select(session => session.Activity)
+            .Where(activity => activity.CategoryId == workCategory.Id)
+            .Select(activity => (
+                activity.StartTimeUtc > weekStartUtc ? activity.StartTimeUtc : weekStartUtc,
+                activity.EffectiveEndTimeUtc < nowUtc ? activity.EffectiveEndTimeUtc : nowUtc));
+        return new WeeklyWorkSummary(true, ActivityDurationCalculator.Calculate(intervals), weekStartDate);
     }
 }

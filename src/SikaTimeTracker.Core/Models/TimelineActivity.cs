@@ -9,4 +9,7 @@ public sealed record TimelineActivity(
     string WindowTitle,
     long CategoryId,
     bool IsManuallyClassified,
-    string WebsiteDomain = "");
+    string WebsiteDomain = "")
+{
+    public int SourceSegmentCount { get; init; } = 1;
+}
